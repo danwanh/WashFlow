@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WashTrack - Hàng đợi công việc</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Montserrat', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#F0F9FF',
+              100: '#E0F2FE',
+              500: '#0284C7',
+              600: '#0369A1',
+              700: '#075985',
+              900: '#0C4A6E',
+            },
+            status: {
+              done: '#10B981',
+              running: '#3B82F6',
+              idle: '#94A3B8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      font-family: 'Montserrat', sans-serif;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+    @keyframes drumSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spin-slow {
+      animation: drumSpin 3.5s linear infinite;
+    }
+    .machine-drop-target {
+      border: 2px dashed #0284c7 !important;
+      background-color: #f0f9ff !important;
+      transform: scale(1.03);
+      box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.2);
+      transition: all 0.2s ease;
+      cursor: copy;
+    }
+    .machine-drop-target.dragover-active {
+      border-color: #0369a1 !important;
+      background-color: #e0f2fe !important;
+      transform: scale(1.06);
+    }
+    .machine-dimmed {
+      opacity: 0.35 !important;
+      filter: grayscale(40%);
+      transition: all 0.25s ease;
+      pointer-events: none;
+    }
+    @keyframes rowAlertPulse {
+      0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); transform: scale(1); }
+      50% { box-shadow: 0 0 0 8px rgba(225, 29, 72, 0.25); transform: scale(1.012); }
+      100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); transform: scale(1); }
+    }
+    .row-highlight-pulse {
+      animation: rowAlertPulse 1.2s ease-in-out 2;
+    }
+    @keyframes greenAlertPulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); transform: scale(1); }
+      50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.25); transform: scale(1.012); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); transform: scale(1); }
+    }
+    .row-highlight-pulse-green {
+      animation: greenAlertPulse 1.2s ease-in-out 2;
+    }
+    .queue-row-animate {
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-color 0.2s ease;
+    }
+  </style>
+</head>
+<body class="bg-[#F8FAFC] text-slate-800 h-full flex flex-col overflow-hidden">
+<!-- TOP APP BAR -->
+<header class="h-14 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between flex-shrink-0 z-20">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center text-white shadow-sm shadow-sky-600/20">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24">
+<rect height="20" rx="3" width="16" x="4" y="2"></rect>
+<circle cx="12" cy="13" r="5"></circle>
+<path d="M12 10a3 3 0 0 1 3 3"></path>
+<circle cx="8" cy="6" fill="currentColor" r="1"></circle>
+<circle cx="12" cy="6" fill="currentColor" r="1"></circle>
+</svg>
+</div>
+<div>
+<span class="font-extrabold text-base tracking-tight text-slate-900">WashTrack</span>
+<span class="text-xs font-semibold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full ml-2 border border-sky-200/60">Live Ops</span>
+</div>
+<nav class="hidden md:flex items-center ml-6 pl-6 border-l border-slate-200 space-x-1 text-xs font-bold"><button class="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 border border-sky-200/80 transition flex items-center space-x-1.5 shadow-2xs" id="navTabQueue" onclick="switchMainView('queue')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Hàng đợi</span><span class="ml-1 text-[10px] bg-sky-600 text-white font-extrabold px-1.5 py-0.2 rounded-full" id="headerQueueBadge">5</span></button><button class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center space-x-1.5" id="navTabOverview" onclick="switchMainView('overview')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Tổng quan</span></button><button class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition hidden lg:inline-flex items-center space-x-1" onclick="switchMainView('orders')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Đơn hàng</span></button><button class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition hidden lg:inline-flex items-center space-x-1" onclick="switchMainView('machines')"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><rect height="20" rx="3" stroke-linecap="round" stroke-linejoin="round" width="16" x="4" y="2"></rect><circle cx="12" cy="13" r="5"></circle></svg><span>Máy</span></button></nav></div>
+<!-- Center quick scenario toolbar -->
+<div class="hidden xl:flex items-center bg-slate-100/90 rounded-lg p-1 space-x-1 border border-slate-200/80 text-[11px]"><span class="px-2 font-bold text-slate-400 uppercase text-[10px] tracking-wider">Kịch bản:</span><button class="px-2.5 py-1 font-semibold rounded bg-white text-sky-700 shadow-2xs hover:bg-sky-50 border border-slate-200/70 transition" onclick="openCreateOrderModal(true)">+ Tạo đơn (Chia nhóm)</button><button class="px-2.5 py-1 font-semibold rounded bg-sky-600 text-white shadow-2xs hover:bg-sky-700 transition" onclick="openOrderDetail('123')">👁 Đơn #123 (2 nhóm)</button><button class="px-2.5 py-1 font-semibold rounded bg-white text-amber-700 shadow-2xs hover:bg-amber-50 border border-amber-200/60 transition" onclick="toggleGroupStatusDemo('partial')">⚡ Demo 1 nhóm xong</button><button class="px-2.5 py-1 font-semibold rounded bg-white text-emerald-700 shadow-2xs hover:bg-emerald-50 border border-emerald-200/60 transition" onclick="toggleGroupStatusDemo('full')">✓ Đơn xong hết → Gửi tin</button><button class="px-2.5 py-1 font-semibold rounded bg-white text-rose-800 shadow-2xs hover:bg-rose-50 border border-rose-300 transition" onclick="openDelayWarningModal('123')">⚠ Cảnh báo trễ</button></div>
+<!-- Live indicator & clock -->
+<div class="flex items-center space-x-5 text-sm">
+<div class="flex items-center space-x-2">
+<span class="relative flex h-2.5 w-2.5">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+</span>
+<span class="text-xs font-medium text-slate-500">IoT Kết nối</span>
+</div>
+<div class="h-4 w-px bg-slate-200"></div>
+<div class="text-xs font-semibold text-slate-600">
+      14:52 · Ca chiều (Khu A)
+    </div>
+</div>
+</header>
+<!-- TOP-RIGHT POPUP ALERTS CONTAINER -->
+<div class="fixed top-16 right-5 z-40 w-80 max-w-[calc(100vw-2.5rem)] flex flex-col space-y-2 pointer-events-none" id="alertStack"></div>
+<!-- MAIN SPLIT CANVAS: 80% QUEUE | 20% MACHINES -->
+<main class="flex-1 flex overflow-hidden">
+<!-- LEFT 80%: WORK QUEUE -->
+<section class="w-[80%] h-full flex flex-col border-r border-slate-200/80 bg-[#F8FAFC] overflow-y-auto px-10 py-6" id="queueScrollArea">
+<!-- Section Header + Action bar -->
+<div class="flex items-center justify-between mb-4 flex-shrink-0">
+<div>
+<div class="flex items-center space-x-3">
+<h1 class="text-xl font-bold tracking-tight text-slate-900 uppercase">Hàng đợi công việc</h1>
+<!-- PRIMARY BUTTON: [+ Tạo đơn] -->
+<button class="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm shadow-sky-600/25 transition active:scale-95" onclick="openCreateOrderModal()">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24">
+<path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<span>+ Tạo đơn</span>
+</button>
+</div>
+<p class="text-xs text-slate-400 font-medium mt-1">Xếp theo thứ tự ưu tiên tự động · TIME → RESULT → ACTION · Bấm để xem chi tiết</p>
+</div>
+<div class="flex items-center space-x-3">
+<!-- Simulation test chips -->
+<div class="flex items-center bg-white border border-slate-200/90 rounded-lg p-1 shadow-xs space-x-1">
+<span class="text-[10px] font-bold uppercase text-slate-400 px-1.5 hidden lg:inline">Thử cảnh báo:</span>
+<button class="px-2 py-1 rounded text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 transition" onclick="triggerAlert('machine_done')">
+            ✓ Máy xong
+          </button>
+<button class="px-2 py-1 rounded text-[11px] font-semibold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/60 transition" onclick="triggerAlert('machine_delay')">
+            ⚠ Nhắc nhở 5p
+          </button>
+<button class="px-2 py-1 rounded text-[11px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 transition" onclick="openDelayWarningModal('123')">
+            ⚠ Cảnh báo trễ
+          </button>
+</div>
+<div class="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm">
+<span class="text-sky-600 font-bold" id="queueCount">5</span> việc cần xử lý
+        </div>
+</div>
+</div>
+<!-- ACTIVE QUEUE CONTAINER -->
+<div class="space-y-3 flex-shrink-0 transition-all duration-200" id="queueContainer"><div class="queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border-2 border-sky-400/80 shadow-md shadow-sky-500/5 transition hover:shadow-lg hover:border-sky-500 flex items-center justify-between select-none" data-group-name="Đồ trắng" data-order-id="123" id="order-row-123-white" onclick="openOrderDetail('123')"><div class="flex items-center space-x-4"><div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1"><span class="star-icon text-amber-500 text-sm font-bold leading-none">★</span><span class="rank-num text-xs font-extrabold text-sky-700 mt-0.5">1</span></div><div class="bag-handle w-10 h-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 flex-shrink-0 group-hover:scale-105 transition"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 32 32"><path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#E0F2FE" stroke="#0284C7" stroke-linejoin="round" stroke-width="1.75"></path><path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#0284C7" stroke-linecap="round" stroke-width="1.75"></path><ellipse cx="16" cy="7" fill="#0284C7" rx="3.5" ry="1.5" stroke="#0284C7" stroke-width="1.2"></ellipse><path d="M13 16L19 16M14 20L18 20" stroke="#38BDF8" stroke-linecap="round" stroke-width="1.5"></path></svg></div><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">LẤY ĐỒ RA · MÁY 02</span><span class="urgent-tag text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full">Ưu tiên ngay</span><span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full">#123 · Đồ trắng</span></div><div class="text-sm font-semibold text-slate-600 mt-0.5">Nguyễn Văn A <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#123</span></div><div class="text-xs text-slate-400 font-medium flex items-center space-x-2"><span>3 món</span><span class="text-slate-300">·</span><span class="order-deadline-text font-semibold text-slate-600">Hẹn 16:00</span><button class="text-[10px] font-bold text-sky-600 hover:text-sky-800 underline ml-1" onclick="event.stopPropagation(); openRescheduleModal('123', 'normal')">Chỉnh giờ hẹn</button></div></div></div><div class="flex items-center space-x-2"><div class="flex items-center text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-3 py-1.5 rounded-lg group-hover:bg-slate-100 transition"><svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Tự động IoT</div></div></div><div class="queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border border-slate-200 shadow-sm transition hover:border-sky-300 hover:shadow-md flex items-center justify-between select-none" data-order-id="128" id="order-row-128" onclick="openOrderDetail('128')"><div class="flex items-center space-x-4"><div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1"><span class="star-icon hidden text-amber-500 text-sm font-bold leading-none">★</span><span class="rank-num text-xs font-extrabold text-slate-400 mt-0.5">2</span></div><div class="bag-handle cursor-grab active:cursor-grabbing w-10 h-10 rounded-xl bg-sky-50 border-2 border-sky-300/80 flex items-center justify-center text-sky-600 flex-shrink-0 hover:scale-110 hover:border-sky-500 shadow-sm transition group/bag relative" data-can-drop-machine="true" data-order-id="128" data-target-type="washer" draggable="true" title="Kéo túi này vào Máy giặt"><svg class="w-6 h-6 pointer-events-none" fill="none" stroke="currentColor" viewbox="0 0 32 32"><path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#E0F2FE" stroke="#0284C7" stroke-linejoin="round" stroke-width="1.75"></path><path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#0284C7" stroke-linecap="round" stroke-width="1.75"></path><ellipse cx="16" cy="7" fill="#0284C7" rx="3.5" ry="1.5" stroke="#0284C7" stroke-width="1.2"></ellipse></svg><span class="absolute -top-1 -right-1 flex h-2.5 w-2.5 pointer-events-none"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span></span></div><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">VÀO MÁY GIẶT 01</span><span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full">#128 · Áo quần</span><span class="text-[10px] font-bold text-sky-700 bg-sky-100/70 border border-sky-200 px-2 py-0.5 rounded-full flex items-center"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round"></path></svg>Kéo túi vào Máy 01</span></div><div class="text-sm font-semibold text-slate-600 mt-0.5">Trần Minh Anh <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#128</span></div><div class="text-xs text-slate-400 font-medium flex items-center space-x-2"><span>Áo quần thể thao</span><span class="text-slate-300">·</span><span class="order-deadline-text font-semibold text-slate-600">Hẹn 16:30</span><button class="text-[10px] font-bold text-sky-600 hover:text-sky-800 underline ml-1" onclick="event.stopPropagation(); openRescheduleModal('128', 'normal')">Chỉnh giờ hẹn</button></div></div></div><div class="flex items-center space-x-2"><button class="px-3 py-1.5 rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 font-bold text-xs transition active:scale-95" onclick="event.stopPropagation(); openRescheduleModal('128', 'feasible')" title="Đôn giờ hẹn sớm hơn">Đôn đơn</button><div class="flex items-center text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-3 py-1.5 rounded-lg group-hover:bg-slate-100 transition"><svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Tự động IoT</div></div></div><div class="queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border border-slate-200 shadow-sm transition hover:border-sky-300 hover:shadow-md flex items-center justify-between select-none" data-group-name="Đồ màu" data-order-id="123" id="order-row-123-color" onclick="openOrderDetail('123')"><div class="flex items-center space-x-4"><div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1"><span class="star-icon hidden text-amber-500 text-sm font-bold leading-none">★</span><span class="rank-num text-xs font-extrabold text-slate-400 mt-0.5">3</span></div><div class="bag-handle cursor-grab active:cursor-grabbing w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 flex-shrink-0 hover:scale-105 transition" data-can-drop-machine="true" data-order-id="123" data-target-type="washer"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 32 32"><path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#FEF3C7" stroke="#D97706" stroke-linejoin="round" stroke-width="1.75"></path><path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#D97706" stroke-linecap="round" stroke-width="1.75"></path><ellipse cx="16" cy="7" fill="#D97706" rx="3.5" ry="1.5" stroke="#D97706" stroke-width="1.2"></ellipse></svg></div><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">VÀO MÁY GIẶT 01</span><span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full">#123 · Đồ màu</span><span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Cùng đơn Nguyễn Văn A</span></div><div class="text-sm font-semibold text-slate-600 mt-0.5">Nguyễn Văn A <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#123</span></div><div class="text-xs text-slate-400 font-medium flex items-center space-x-2"><span>Áo sơ mi màu &amp; quần kaki</span><span class="text-slate-300">·</span><span class="order-deadline-text font-semibold text-slate-600">Hẹn 16:00</span><span class="text-slate-300">·</span><span class="text-amber-600 font-medium">Nhóm 2/2</span></div></div></div><div class="flex items-center space-x-2"><div class="flex items-center text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-3 py-1.5 rounded-lg group-hover:bg-slate-100 transition"><svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Tự động IoT</div></div></div><div class="queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border border-slate-200 shadow-sm transition hover:border-sky-300 hover:shadow-md flex items-center justify-between select-none" data-order-id="131" id="order-row-131" onclick="openOrderDetail('131')"><div class="flex items-center space-x-4"><div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1"><span class="star-icon hidden text-amber-500 text-sm font-bold leading-none">★</span><span class="rank-num text-xs font-extrabold text-slate-400 mt-0.5">4</span></div><div class="bag-handle w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 flex-shrink-0 group-hover:scale-105 transition" data-can-drop-machine="false" data-order-id="131"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 32 32"><path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#F1F5F9" stroke="#64748B" stroke-linejoin="round" stroke-width="1.75"></path><path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#64748B" stroke-linecap="round" stroke-width="1.75"></path><ellipse cx="16" cy="7" fill="#64748B" rx="3.5" ry="1.5" stroke="#64748B" stroke-width="1.2"></ellipse></svg></div><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">PHÂN LOẠI</span><span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full">#131 · Chăn mền</span></div><div class="text-sm font-semibold text-slate-600 mt-0.5">Lê Thị Mai <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#131</span></div><div class="text-xs text-slate-400 font-medium flex items-center space-x-2"><span>Chăn mền</span><span class="text-slate-300">·</span><span class="order-deadline-text font-semibold text-slate-600">Hẹn 16:20</span><button class="text-[10px] font-bold text-sky-600 hover:text-sky-800 underline ml-1" onclick="event.stopPropagation(); openRescheduleModal('131', 'normal')">Chỉnh giờ hẹn</button></div></div></div><div><button class="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition active:scale-95" onclick="event.stopPropagation(); completeManualTask('131', 'phân loại');"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Xong</span></button></div></div><div class="queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border border-slate-200 shadow-sm transition hover:border-sky-300 hover:shadow-md flex items-center justify-between select-none" data-order-id="135" id="order-row-135" onclick="openOrderDetail('135')"><div class="flex items-center space-x-4"><div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1"><span class="star-icon hidden text-amber-500 text-sm font-bold leading-none">★</span><span class="rank-num text-xs font-extrabold text-slate-400 mt-0.5">5</span></div><div class="bag-handle w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 flex-shrink-0 group-hover:scale-105 transition" data-can-drop-machine="false" data-order-id="135"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 32 32"><path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#F1F5F9" stroke="#64748B" stroke-linejoin="round" stroke-width="1.75"></path><path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#64748B" stroke-linecap="round" stroke-width="1.75"></path><ellipse cx="16" cy="7" fill="#64748B" rx="3.5" ry="1.5" stroke="#64748B" stroke-width="1.2"></ellipse></svg></div><div class="flex flex-col"><div class="flex items-center space-x-2"><span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">XẾP ĐỒ</span><span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-full">#135 · Áo khoác</span></div><div class="text-sm font-semibold text-slate-600 mt-0.5">Hoàng Nam <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#135</span></div><div class="text-xs text-slate-400 font-medium flex items-center space-x-2"><span>Áo khoác</span><span class="text-slate-300">·</span><span class="order-deadline-text font-semibold text-slate-600">Hẹn 16:40</span><button class="text-[10px] font-bold text-sky-600 hover:text-sky-800 underline ml-1" onclick="event.stopPropagation(); openRescheduleModal('135', 'normal')">Chỉnh giờ hẹn</button></div></div></div><div><button class="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition active:scale-95" onclick="event.stopPropagation(); completeManualTask('135', 'xếp đồ');"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Xong</span></button></div></div><div class="mt-4 p-3 rounded-xl border border-slate-200/80 bg-slate-50/70 flex items-center justify-between text-xs" id="orderStatusNoticeBanner"><div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span class="font-bold text-slate-700">Đơn #123 (Nguyễn Văn A):</span><span class="text-slate-500 font-medium" id="noticeBannerText">Đồ trắng đã giặt xong (Máy 02) · Đang chờ Đồ màu hoàn tất giặt sấy</span></div><div class="flex items-center space-x-2"><span class="text-[11px] font-bold text-slate-400 italic" id="notifyRuleText">Chỉ gửi tin khách khi tất cả các nhóm hoàn thành</span><button class="px-3 py-1 rounded-lg bg-slate-200 text-slate-400 text-xs font-bold cursor-not-allowed flex items-center space-x-1" disabled="" id="globalNotifyClientBtn"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Gửi tin khách</span></button></div></div></div>
+<!-- UPCOMING TASKS -->
+<div class="mt-8 pt-6 border-t border-slate-200/80">
+<div class="flex items-center space-x-2 mb-3">
+<span class="text-xs font-bold uppercase tracking-wider text-slate-400">Sắp tới</span>
+<span class="text-[10px] text-slate-400 font-medium">(Chưa vào hàng đợi ưu tiên · Bấm để xem chi tiết)</span>
+</div>
+<div class="space-y-2">
+<div class="cursor-pointer group flex items-center justify-between bg-slate-100/70 hover:bg-white hover:border-sky-300 hover:shadow-xs px-4 py-2.5 rounded-lg border border-slate-200/50 text-xs transition" onclick="openOrderDetail('140')">
+<div class="flex items-center space-x-4">
+<span class="font-bold text-slate-500 font-mono text-[11px]">17:55</span>
+<span class="font-extrabold uppercase text-slate-700 group-hover:text-sky-700 tracking-wide transition">PHÂN LOẠI</span>
+<span class="text-slate-500 font-medium">#140 · Nguyễn An</span>
+</div>
+<span class="text-[11px] text-slate-400 font-medium">Chờ đồ đến</span>
+</div>
+<div class="cursor-pointer group flex items-center justify-between bg-slate-100/70 hover:bg-white hover:border-sky-300 hover:shadow-xs px-4 py-2.5 rounded-lg border border-slate-200/50 text-xs transition" onclick="openOrderDetail('145')">
+<div class="flex items-center space-x-4">
+<span class="font-bold text-slate-500 font-mono text-[11px]">18:10</span>
+<span class="font-extrabold uppercase text-slate-700 group-hover:text-sky-700 tracking-wide transition">PHÂN LOẠI</span>
+<span class="text-slate-500 font-medium">#145 · Trần Mai</span>
+</div>
+<span class="text-[11px] text-slate-400 font-medium">Chờ đồ đến</span>
+</div>
+</div>
+</div>
+</section><section class="w-[80%] h-full flex flex-col border-r border-slate-200/80 bg-[#F8FAFC] overflow-y-auto px-10 py-6 hidden" id="overviewDashboardSection"><div class="flex items-center justify-between mb-6 flex-shrink-0"><div><div class="flex items-center space-x-3"><h1 class="text-xl font-bold tracking-tight text-slate-900 uppercase">Tổng quan vận hành</h1><span class="text-xs font-bold text-sky-700 bg-sky-100 border border-sky-200 px-2.5 py-0.5 rounded-full">Hiệu suất tiệm giặt</span></div><p class="text-xs text-slate-500 font-medium mt-1">Báo cáo doanh thu, tiến độ hẹn trả và công suất máy giặt sấy thời gian thực</p></div><div class="flex items-center space-x-3"><div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-xs text-xs font-bold" id="timeFilterGroup"><button class="px-3 py-1 rounded-md bg-sky-600 text-white shadow-2xs transition" data-period="day" onclick="setOverviewPeriod('day')">Ngày</button><button class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-period="month" onclick="setOverviewPeriod('month')">Tháng</button><button class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-period="year" onclick="setOverviewPeriod('year')">Năm</button></div><button class="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1" onclick="switchMainView('queue')"><span>← Về Hàng đợi</span></button></div></div><div class="grid grid-cols-4 gap-4 mb-6 flex-shrink-0"><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between"><div class="flex items-center justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Doanh thu</span><span class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">₫</span></div><div class="mt-2"><div class="text-2xl font-black text-slate-900 tracking-tight font-mono" id="metricRevenue">2.450.000đ</div><div class="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center"><span>↑ +12.5% so với hôm qua</span></div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between"><div class="flex items-center justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Đơn hàng</span><span class="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-xs">📦</span></div><div class="mt-2"><div class="text-2xl font-black text-slate-900 tracking-tight font-mono" id="metricOrders">42 <span class="text-sm font-semibold text-slate-400">đơn</span></div><div class="text-[11px] font-semibold text-slate-500 mt-1">Đang xử lý: 4 đơn</div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between"><div class="flex items-center justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Đúng hẹn</span><span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">✓</span></div><div class="mt-2"><div class="text-2xl font-black text-emerald-700 tracking-tight font-mono" id="metricOnTime">38 <span class="text-sm font-semibold text-slate-400">đơn</span></div><div class="text-[11px] font-bold text-emerald-600 mt-1">Đạt 90.5% chỉ tiêu</div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between"><div class="flex items-center justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-rose-600">Trễ hẹn</span><span class="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs">⚠</span></div><div class="mt-2"><div class="text-2xl font-black text-rose-600 tracking-tight font-mono" id="metricDelayed">4 <span class="text-sm font-semibold text-slate-400">đơn</span></div><div class="text-[11px] font-bold text-rose-600 mt-1">9.5% cần khắc phục</div></div></div></div><div class="grid grid-cols-2 gap-5 flex-1"><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col"><div class="flex items-center justify-between mb-3"><div class="flex items-center space-x-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-600">1. Biểu đồ doanh thu</span><span class="text-[10px] text-slate-400 font-medium" id="revenueChartSubtitle">(Hôm nay theo khung giờ)</span></div><span class="text-xs font-bold text-emerald-600 font-mono">Đỉnh: 14h-16h</span></div><div class="flex-1 flex flex-col justify-end pt-4"><div class="h-44 w-full flex items-end justify-between space-x-2 px-2 border-b border-slate-200 pb-2"><div class="flex-1 flex flex-col items-center group"><span class="text-[10px] font-mono font-bold text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition">280k</span><div class="w-full bg-sky-200 hover:bg-sky-500 rounded-t transition-all" style="height: 35%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">08:00</span></div><div class="flex-1 flex flex-col items-center group"><span class="text-[10px] font-mono font-bold text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition">450k</span><div class="w-full bg-sky-300 hover:bg-sky-500 rounded-t transition-all" style="height: 55%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">10:00</span></div><div class="flex-1 flex flex-col items-center group"><span class="text-[10px] font-mono font-bold text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition">520k</span><div class="w-full bg-sky-400 hover:bg-sky-500 rounded-t transition-all" style="height: 65%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">12:00</span></div><div class="flex-1 flex flex-col items-center group"><span class="text-[10px] font-mono font-bold text-sky-700 mb-1 opacity-100">820k</span><div class="w-full bg-sky-600 rounded-t shadow-sm" style="height: 95%"></div><span class="text-[10px] font-bold text-sky-700 mt-2">14:00</span></div><div class="flex-1 flex flex-col items-center group"><span class="text-[10px] font-mono font-bold text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition">380k</span><div class="w-full bg-sky-300 hover:bg-sky-500 rounded-t transition-all" style="height: 48%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">16:00</span></div></div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col"><div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-600">2. Tình trạng giờ hẹn</span><span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Tỷ lệ đạt 90%</span></div><div class="flex-1 flex items-center justify-around"><div class="relative flex items-center justify-center"><svg class="w-32 h-32 transform -rotate-90" viewbox="0 0 100 100"><circle cx="50" cy="50" fill="transparent" r="38" stroke="#FEE2E2" stroke-width="12"></circle><circle cx="50" cy="50" fill="transparent" r="38" stroke="#10B981" stroke-dasharray="238.76" stroke-dashoffset="23.87" stroke-linecap="round" stroke-width="12"></circle></svg><div class="absolute flex flex-col items-center justify-center text-center"><span class="text-xl font-extrabold text-slate-800 font-mono">90.5%</span><span class="text-[10px] font-bold uppercase text-emerald-600">Đúng hẹn</span></div></div><div class="space-y-3"><div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><div><div class="text-xs font-extrabold text-slate-800">Đúng &amp; Sớm hẹn</div><div class="text-[11px] text-slate-400 font-semibold">38 đơn (90.5%)</div></div></div><div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-rose-500"></span><div><div class="text-xs font-extrabold text-slate-800">Trễ hẹn</div><div class="text-[11px] text-slate-400 font-semibold">4 đơn (9.5%)</div></div></div></div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col"><div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-600">3. Khung giờ khách hẹn nhận đồ</span><span class="text-[10px] text-slate-400 font-medium">Cao điểm 16h-18h</span></div><div class="flex-1 flex flex-col justify-center space-y-2.5 pt-1"><div class="flex items-center space-x-2 text-xs"><span class="w-16 font-mono text-[11px] text-slate-500 font-semibold">08 - 10h</span><div class="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden"><div class="bg-sky-400 h-full rounded-full" style="width: 30%"></div></div><span class="w-8 font-mono text-right font-bold text-slate-700">4 đơn</span></div><div class="flex items-center space-x-2 text-xs"><span class="w-16 font-mono text-[11px] text-slate-500 font-semibold">10 - 12h</span><div class="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden"><div class="bg-sky-400 h-full rounded-full" style="width: 45%"></div></div><span class="w-8 font-mono text-right font-bold text-slate-700">7 đơn</span></div><div class="flex items-center space-x-2 text-xs"><span class="w-16 font-mono text-[11px] text-slate-500 font-semibold">12 - 14h</span><div class="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden"><div class="bg-sky-400 h-full rounded-full" style="width: 35%"></div></div><span class="w-8 font-mono text-right font-bold text-slate-700">5 đơn</span></div><div class="flex items-center space-x-2 text-xs"><span class="w-16 font-mono text-[11px] text-slate-500 font-semibold">14 - 16h</span><div class="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden"><div class="bg-sky-500 h-full rounded-full" style="width: 75%"></div></div><span class="w-8 font-mono text-right font-bold text-sky-700">12 đơn</span></div><div class="flex items-center space-x-2 text-xs"><span class="w-16 font-mono text-[11px] text-slate-500 font-semibold">16 - 18h</span><div class="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden"><div class="bg-amber-500 h-full rounded-full" style="width: 90%"></div></div><span class="w-8 font-mono text-right font-bold text-amber-700">14 đơn</span></div></div></div><div class="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col"><div class="flex items-center justify-between mb-3"><span class="text-xs font-bold uppercase tracking-wider text-slate-600">4. Số lượng đơn theo ngày</span><span class="text-xs font-bold text-slate-500 font-mono">Tổng: 42 đơn</span></div><div class="flex-1 flex flex-col justify-end pt-2"><div class="h-40 w-full flex items-end justify-between space-x-2 px-1 border-b border-slate-200 pb-2"><div class="flex-1 flex flex-col items-center"><div class="w-full bg-emerald-200 hover:bg-emerald-400 rounded-t" style="height: 40%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">T2</span></div><div class="flex-1 flex flex-col items-center"><div class="w-full bg-emerald-300 hover:bg-emerald-400 rounded-t" style="height: 60%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">T3</span></div><div class="flex-1 flex flex-col items-center"><div class="w-full bg-emerald-300 hover:bg-emerald-400 rounded-t" style="height: 55%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">T4</span></div><div class="flex-1 flex flex-col items-center"><div class="w-full bg-emerald-400 hover:bg-emerald-500 rounded-t" style="height: 75%"></div><span class="text-[10px] font-semibold text-slate-500 mt-2">T5</span></div><div class="flex-1 flex flex-col items-center"><div class="w-full bg-emerald-600 rounded-t" style="height: 90%"></div><span class="text-[10px] font-bold text-emerald-700 mt-2">Hôm nay</span></div></div></div></div></div></section>
+<!-- RIGHT 20%: MACHINES OVERVIEW -->
+<aside class="w-[20%] h-full bg-white flex flex-col p-5 overflow-y-auto" id="machinesAside"><div class="mb-5"><h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Máy</h2><div class="text-[11px] text-slate-400 mt-0.5 font-medium">Trạng thái thời gian thực</div></div><div class="mb-7" id="washerGroup"><div class="text-[11px] font-extrabold uppercase tracking-wide text-slate-700 mb-3.5 flex items-center justify-between"><span>Máy giặt</span><span class="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">3 máy</span></div><div class="grid grid-cols-2 gap-3"><div class="machine-card flex flex-col items-center p-2.5 rounded-xl border border-sky-200 bg-sky-50/30 text-center transition-all duration-200" data-machine-id="washer-01" data-machine-name="Máy 01" data-machine-state="running" data-machine-type="washer"><div class="washer-svg-box w-12 h-14 bg-white border-2 border-sky-500 rounded-lg p-1 flex flex-col justify-between shadow-2xs relative transition"><div class="flex justify-between items-center px-1"><div class="status-dot w-1.5 h-1.5 rounded-full bg-sky-500"></div><div class="w-3 h-1 bg-sky-200 rounded"></div></div><div class="washer-drum w-8 h-8 mx-auto rounded-full border-2 border-sky-400 bg-sky-50 flex items-center justify-center overflow-hidden"><div class="drum-core w-5 h-5 rounded-full border border-dashed border-sky-600 spin-slow flex items-center justify-center"><div class="w-1.5 h-1.5 bg-sky-400 rounded-full"></div></div></div></div><span class="text-xs font-bold text-slate-800 mt-2">Máy 01</span><span class="machine-status-badge text-[11px] font-bold text-sky-600">16 phút</span><span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded mt-0.5">#123 · Đồ màu</span></div><div class="machine-card flex flex-col items-center p-2.5 rounded-xl border-2 border-emerald-400/80 bg-emerald-50/30 text-center transition-all duration-200" data-machine-id="washer-02" data-machine-name="Máy 02" data-machine-state="done" data-machine-type="washer"><div class="w-12 h-14 bg-white border-2 border-emerald-500 rounded-lg p-1 flex flex-col justify-between shadow-2xs relative"><div class="flex justify-between items-center px-1"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div><div class="w-3 h-1 bg-emerald-200 rounded"></div></div><div class="w-8 h-8 mx-auto rounded-full border-2 border-emerald-500 bg-emerald-50 flex items-center justify-center"><svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><span class="text-xs font-bold text-slate-800 mt-2">Máy 02</span><span class="machine-status-badge text-[11px] font-bold text-emerald-600">Xong</span><span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded mt-0.5">#123 · Đồ trắng</span></div><div class="machine-card flex flex-col items-center p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-center col-span-2 mx-auto w-1/2 transition-all duration-200" data-machine-id="washer-03" data-machine-name="Máy 03" data-machine-state="idle" data-machine-type="washer"><div class="w-12 h-14 bg-white border-2 border-slate-300 rounded-lg p-1 flex flex-col justify-between shadow-2xs relative"><div class="flex justify-between items-center px-1"><div class="w-1.5 h-1.5 rounded-full bg-slate-300"></div><div class="w-3 h-1 bg-slate-200 rounded"></div></div><div class="w-8 h-8 mx-auto rounded-full border-2 border-slate-300 bg-slate-50 flex items-center justify-center"><div class="w-5 h-5 rounded-full border border-slate-200 bg-white"></div></div></div><span class="text-xs font-bold text-slate-800 mt-2">Máy 03</span><span class="machine-status-badge text-[11px] font-semibold text-slate-400">Trống</span></div></div></div><div id="dryerGroup"><div class="text-[11px] font-extrabold uppercase tracking-wide text-slate-700 mb-3.5 flex items-center justify-between"><span>Máy sấy</span><span class="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">2 máy</span></div><div class="grid grid-cols-2 gap-3"><div class="machine-card flex flex-col items-center p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-center transition-all duration-200" data-machine-id="dryer-01" data-machine-name="Sấy 01" data-machine-state="idle" data-machine-type="dryer"><div class="w-12 h-14 bg-white border-2 border-slate-300 rounded-lg p-1 flex flex-col justify-between shadow-2xs"><div class="flex justify-between items-center px-1"><div class="w-1.5 h-1.5 rounded-full bg-slate-300"></div><div class="flex space-x-0.5"><div class="w-1 h-1 rounded-full bg-slate-300"></div><div class="w-1 h-1 rounded-full bg-slate-300"></div></div></div><div class="w-8 h-8 mx-auto rounded-full border-2 border-slate-300 bg-slate-50 flex items-center justify-center"><div class="w-5 h-5 rounded-full border border-slate-200 bg-white"></div></div></div><span class="text-xs font-bold text-slate-800 mt-2">Sấy 01</span><span class="machine-status-badge text-[11px] font-semibold text-slate-400">Trống</span></div><div class="machine-card flex flex-col items-center p-2.5 rounded-xl border border-amber-200 bg-amber-50/30 text-center transition-all duration-200" data-machine-id="dryer-02" data-machine-name="Sấy 02" data-machine-state="running" data-machine-type="dryer"><div class="w-12 h-14 bg-white border-2 border-amber-500 rounded-lg p-1 flex flex-col justify-between shadow-2xs"><div class="flex justify-between items-center px-1"><div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div><div class="flex space-x-0.5"><div class="w-1 h-1 rounded-full bg-amber-400"></div><div class="w-1 h-1 rounded-full bg-amber-400"></div></div></div><div class="w-8 h-8 mx-auto rounded-full border-2 border-amber-400 bg-amber-50 flex items-center justify-center overflow-hidden"><div class="w-5 h-5 rounded-full border border-dashed border-amber-500 spin-slow flex items-center justify-center"><div class="w-1.5 h-1.5 bg-amber-400 rounded-full"></div></div></div></div><span class="text-xs font-bold text-slate-800 mt-2">Sấy 02</span><span class="machine-status-badge text-[11px] font-bold text-amber-600">8 phút</span><span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded mt-0.5">#123 · Đồ trắng</span></div></div></div></aside>
+</main>
+<!-- ================================================================= -->
+<!-- MODAL 1: TẠO ĐƠN HÀNG MỚI (TIME → RESULT → ACTION) -->
+<!-- ================================================================= -->
+<div class="fixed inset-0 z-50 hidden transition-opacity duration-200 flex items-center justify-center p-4" id="createOrderModal"><div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeCreateOrderModal()"></div><div class="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10"><div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70"><div class="flex items-center space-x-2.5"><div class="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-xs">+</div><h3 class="font-extrabold text-sm text-slate-900 uppercase tracking-tight">Tạo đơn hàng mới &amp; Tính giá</h3></div><button class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center text-sm" onclick="closeCreateOrderModal()">✕</button></div><div class="p-5 space-y-4 max-h-[78vh] overflow-y-auto"><div class="grid grid-cols-2 gap-3"><div><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Khách hàng</label><input class="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none" id="newCustomerName" placeholder="Tên khách hàng..." type="text" value="Nguyễn Văn A"/></div><div><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Giờ khách hẹn lấy</label><div class="flex space-x-1.5"><input class="w-full px-2.5 py-2 text-xs font-bold font-mono rounded-lg border border-slate-200 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-center outline-none" id="newDesiredTime" oninput="checkCreateTimeFeasibility()" type="text" value="16:00"/><button class="px-2.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold whitespace-nowrap transition" onclick="checkCreateTimeFeasibility()">Kiểm tra</button></div></div></div><div><div class="flex items-center justify-between mb-1.5"><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Chọn nhanh loại đồ</label><span class="text-[10px] text-sky-600 font-semibold">+ Tự tính theo nhóm lâu nhất</span></div><div class="grid grid-cols-3 gap-2" id="itemCatalogChips"><button class="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-sky-400 hover:bg-sky-50/50 bg-white text-left transition" onclick="addOrderPresetItem('Áo sơ mi trắng', 25000, 'kg', 1.5)" type="button"><div class="text-xs font-bold text-slate-800">+ Đồ trắng</div><div class="text-[10px] font-semibold text-slate-500 font-mono">1.5kg</div></button><button class="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-sky-400 hover:bg-sky-50/50 bg-white text-left transition" onclick="addOrderPresetItem('Áo quần màu', 30000, 'kg', 2.0)" type="button"><div class="text-xs font-bold text-slate-800">+ Đồ màu</div><div class="text-[10px] font-semibold text-slate-500 font-mono">2.0kg</div></button><button class="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-sky-400 hover:bg-sky-50/50 bg-white text-left transition" onclick="addOrderPresetItem('Chăn mền', 40000, 'cái', 1)" type="button"><div class="text-xs font-bold text-slate-800">+ Chăn mền</div><div class="text-[10px] font-semibold text-slate-500 font-mono">1 cái</div></button></div></div><div><div class="flex items-center justify-between mb-1.5"><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách đồ đã chọn (3 món)</label><button class="px-2.5 py-1 text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 transition flex items-center space-x-1" id="btnToggleSplitGroups" onclick="toggleGroupSplitSection()" type="button"><span>⚡ Chia nhóm xử lý</span><span class="text-[10px] bg-sky-600 text-white px-1.5 rounded-full">2 nhóm</span></button></div><div class="border border-slate-200 rounded-xl bg-slate-50/60 p-3 space-y-2.5" id="multiGroupPartitionArea"><div class="p-2.5 rounded-lg border border-slate-200 bg-white space-y-1.5"><div class="flex items-center justify-between"><div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-slate-400"></span><span class="text-xs font-extrabold text-slate-800">Nhóm 1 (Đồ trắng)</span><span class="text-[10px] font-semibold text-slate-400">Gợi ý: Máy 02 / Sấy 02</span></div><button class="text-[10px] font-bold text-sky-600 hover:underline" type="button">Đổi tên</button></div><div class="flex items-center justify-between text-xs text-slate-600 pl-4"><div class="flex items-center space-x-2 font-medium"><span>• Áo sơ mi trắng</span><span class="text-slate-400">(1.5 kg)</span></div><span class="font-mono font-bold text-slate-700">37.500đ</span></div></div><div class="p-2.5 rounded-lg border border-slate-200 bg-white space-y-1.5"><div class="flex items-center justify-between"><div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span><span class="text-xs font-extrabold text-slate-800">Nhóm 2 (Đồ màu)</span><span class="text-[10px] font-semibold text-slate-400">Gợi ý: Máy 01</span></div><button class="text-[10px] font-bold text-sky-600 hover:underline" type="button">Đổi tên</button></div><div class="flex items-center justify-between text-xs text-slate-600 pl-4"><div class="flex items-center space-x-2 font-medium"><span>• Quần tây &amp; áo thun màu</span><span class="text-slate-400">(2.0 kg)</span></div><span class="font-mono font-bold text-slate-700">55.000đ</span></div></div><div class="flex items-center justify-between pt-1"><button class="text-xs font-bold text-sky-700 hover:text-sky-900 flex items-center space-x-1" type="button"><span>+ Thêm nhóm xử lý mới</span></button><span class="text-[11px] text-slate-400">Đơn đơn giản có thể bỏ qua chia nhóm</span></div></div></div><div class="grid grid-cols-2 gap-3 items-center pt-1"><div><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Dịch vụ</label><select class="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 bg-white" id="newServiceType"><option value="Giặt chia màu + Sấy">Giặt chia màu + Sấy ▾</option><option value="Giặt sấy tiêu chuẩn">Giặt sấy tiêu chuẩn</option><option value="Chỉ Giặt">Chỉ Giặt</option><option value="Giặt hấp cao cấp">Giặt hấp cao cấp</option></select></div><div class="bg-slate-100/80 rounded-xl p-2.5 border border-slate-200 flex items-center justify-between"><div><div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tổng tiền tạm tính</div><div class="text-xs text-slate-400 font-medium">2 nhóm xử lý</div></div><div class="text-base font-black text-sky-700 font-mono tracking-tight" id="totalPriceDisplay">92.500đ</div></div></div><div class="p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 text-xs flex items-center justify-between transition-all" id="createFeasibilityResult"><div class="flex items-center space-x-2"><div class="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px] flex-shrink-0" id="createResultIcon">✓</div><div><div class="font-extrabold text-emerald-900" id="createResultTitle">✓ 16:00 khả thi | Tổng 92.500đ</div><div class="text-[11px] text-emerald-700 font-medium" id="createResultSub">Nhóm lâu nhất hoàn tất lúc 15:45 · Kịp giờ hẹn khách</div></div></div></div></div><div class="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between"><button class="px-4 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition" onclick="closeCreateOrderModal()" type="button">Hủy</button><div class="flex items-center space-x-2"><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95" id="btnSubmitCreateOrder" onclick="confirmCreateNewOrder()" type="button">Tạo đơn</button></div></div></div></div>
+<!-- ================================================================= -->
+<!-- MODAL 2: CHỈNH GIỜ HẸN / ĐÔN ĐƠN (TIME → RESULT → ACTION) -->
+<!-- ================================================================= -->
+<div class="fixed inset-0 z-50 hidden transition-opacity duration-200 flex items-center justify-center p-4" id="rescheduleModal">
+<div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeRescheduleModal()"></div>
+<div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10">
+<!-- Header -->
+<div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+<div class="flex items-center space-x-2.5">
+<div class="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-xs">
+          ⏱
+        </div>
+<div>
+<h3 class="font-extrabold text-sm text-slate-900 uppercase tracking-tight">Chỉnh giờ hẹn</h3>
+<p class="text-[11px] font-semibold text-slate-500" id="rescheduleOrderSubtitle">Đơn #128 · Trần Minh Anh</p>
+</div>
+</div>
+<button class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center text-sm" onclick="closeRescheduleModal()">✕</button>
+</div>
+<!-- Body -->
+<div class="p-5 space-y-3.5">
+<!-- Time Inputs Row -->
+<div class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+<div>
+<span class="block text-[10px] uppercase font-bold text-slate-400">Giờ hiện tại</span>
+<span class="text-sm font-extrabold font-mono text-slate-700 mt-0.5 block" id="currentScheduleTimeDisplay">15:30</span>
+</div>
+<div>
+<label class="block text-[10px] uppercase font-bold text-slate-400 mb-0.5">Giờ mới hẹn</label>
+<div class="flex space-x-1">
+<input class="w-full px-2 py-1 text-xs font-bold font-mono rounded border border-slate-200 focus:border-sky-500 text-center outline-none" id="inputNewScheduleTime" type="text" value="14:30"/>
+<button class="px-2 py-1 rounded bg-sky-100 text-sky-700 font-bold text-[10px] hover:bg-sky-200 transition" onclick="validateRescheduleTimeManual()">
+              Kiểm tra
+            </button>
+</div>
+</div>
+</div>
+<!-- Quick test case toggles -->
+<div class="flex items-center space-x-1.5 text-[10px]">
+<span class="text-slate-400 font-bold">Thử tình huống:</span>
+<button class="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold text-slate-600" onclick="simulateRescheduleMode('normal')">Muộn hơn</button>
+<button class="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 font-bold text-emerald-700" onclick="simulateRescheduleMode('feasible')">Khả thi</button>
+<button class="px-2 py-0.5 rounded bg-amber-50 hover:bg-amber-100 font-bold text-amber-700" onclick="simulateRescheduleMode('affects')">Ảnh hưởng</button>
+<button class="px-2 py-0.5 rounded bg-rose-50 hover:bg-rose-100 font-bold text-rose-700" onclick="simulateRescheduleMode('impossible')">Không thể</button>
+</div>
+<!-- RESULT PANEL: TIME → RESULT -->
+<div class="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/70 space-y-1.5 transition-all" id="rescheduleResultBox">
+<div class="flex items-center justify-between">
+<span class="text-xs font-black tracking-tight text-emerald-800 uppercase" id="rescheduleStatusTag">✓ CÓ THỂ ĐÔN</span>
+<span class="text-xs font-mono font-extrabold text-slate-700" id="rescheduleTimeShift">15:30 → 14:30</span>
+</div>
+<p class="text-xs font-medium text-emerald-800" id="rescheduleMessage">
+          Các đơn khác vẫn đúng giờ ✓. Hệ thống sẽ tự động đưa đơn lên đầu hàng đợi.
+        </p>
+<div class="hidden pt-1" id="rescheduleAltOption">
+<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-2xs transition" onclick="applyAltRescheduleTime()">
+            Chọn 14:50
+          </button>
+</div>
+</div>
+</div>
+<!-- ACTION FOOTER: [HỦY] [XÁC NHẬN / VẪN ĐÔN / CHỌN 14:50] -->
+<div class="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-2">
+<button class="px-4 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition" onclick="closeRescheduleModal()">
+        Hủy
+      </button>
+<button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95" id="btnConfirmReschedule" onclick="confirmRescheduleAction()">
+        Xác nhận
+      </button>
+</div>
+</div>
+</div>
+<!-- ================================================================= -->
+<!-- MODAL 3: CẢNH BÁO ĐƠN CÓ NGUY CƠ TRỄ (TIME → RESULT → ACTION) -->
+<!-- ================================================================= -->
+<div class="fixed inset-0 z-50 hidden transition-opacity duration-200 flex items-center justify-center p-4" id="delayWarningModal">
+<div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeDelayWarningModal()"></div>
+<div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl border border-rose-200 overflow-hidden flex flex-col z-10">
+<!-- Header -->
+<div class="px-5 py-4 border-b border-rose-100 flex items-center justify-between bg-rose-50/60">
+<div class="flex items-center space-x-2.5">
+<div class="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs animate-pulse">
+          ⚠
+        </div>
+<h3 class="font-extrabold text-sm text-rose-900 uppercase tracking-tight" id="delayModalHeading">⚠ ĐƠN #123 CÓ NGUY CƠ TRỄ</h3>
+</div>
+<button class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center text-sm" onclick="closeDelayWarningModal()">✕</button>
+</div>
+<!-- Body -->
+<div class="p-5 space-y-3.5">
+<div class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+<div>
+<span class="block text-[10px] uppercase font-bold text-slate-400">Giờ hẹn hiện tại</span>
+<span class="text-sm font-extrabold font-mono text-slate-700 mt-0.5 block" id="delayCurrentDue">15:00</span>
+</div>
+<div>
+<span class="block text-[10px] uppercase font-bold text-rose-600">Dự kiến hoàn tất</span>
+<span class="text-sm font-extrabold font-mono text-rose-600 mt-0.5 block" id="delayEstimated">15:20 (+20p)</span>
+</div>
+</div>
+<!-- Suggested time chip -->
+<div class="p-3.5 bg-amber-50 rounded-xl border border-amber-200/80 flex items-center justify-between">
+<div>
+<div class="text-[10px] font-extrabold uppercase tracking-wider text-amber-800">Giờ đề xuất tối ưu</div>
+<div class="text-base font-extrabold text-slate-900 mt-0.5" id="delaySuggestedTime">15:30</div>
+</div>
+<button class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg shadow-2xs transition" onclick="selectDelaySuggestedTime()">
+          Áp dụng 15:30
+        </button>
+</div>
+<p class="text-[11px] text-slate-500 leading-relaxed font-medium">
+        Lưu ý: Không tự ý đổi giờ hẹn nếu nhân viên chưa bấm xác nhận hoặc chưa liên hệ thống nhất với khách.
+      </p>
+</div>
+<!-- ACTION FOOTER: [GIỮ NGUYÊN] [ĐỔI GIỜ HẸN] -->
+<div class="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-2">
+<button class="px-4 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition" onclick="closeDelayWarningModal()">
+        Giữ nguyên
+      </button>
+<button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95" onclick="confirmDelayReschedule('123', '15:30')">
+        Đổi giờ hẹn sang 15:30
+      </button>
+</div>
+</div>
+</div>
+<!-- ================================================================= -->
+<!-- ORDER DETAIL MODAL -->
+<!-- ================================================================= -->
+<div class="fixed inset-0 z-50 hidden transition-opacity duration-200 flex items-center justify-center p-4" id="orderModal">
+<div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" id="modalBackdrop" onclick="closeModal()"></div>
+<div class="relative bg-white w-full max-w-xl rounded-2xl border border-slate-200/90 overflow-hidden flex flex-col z-10 transform transition-all scale-95 opacity-0 duration-200" id="modalCard">
+<div class="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+<div class="flex items-center space-x-3">
+<div class="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-sm">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<div>
+<div class="flex items-center space-x-2">
+<span class="text-base font-extrabold text-slate-900" id="modalOrderId">#123</span>
+<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80" id="modalStatusBadge">Ưu tiên ngay</span>
+</div>
+<p class="text-xs text-slate-500 font-medium mt-0.5" id="modalCustomerInfo">Nguyễn Văn A · 0901 234 567</p>
+</div>
+</div>
+<button class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center transition" onclick="closeModal()">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<div class="p-6 space-y-5 max-h-[75vh] overflow-y-auto"><div class="bg-sky-50 border border-sky-200/90 rounded-xl p-3.5 flex items-center justify-between" id="modalActionBanner"><div class="flex items-center space-x-3"><div class="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></div><div><div class="text-[11px] uppercase font-bold text-sky-800 tracking-wider">Trạng thái tổng đơn</div><div class="text-sm font-extrabold text-slate-900 mt-0.5" id="modalActionTitle">● Đang xử lý 2 nhóm (Dự kiến xong 15:45 ✓ Đúng hẹn)</div></div></div><div class="text-right"><div class="text-[11px] text-slate-500 font-medium">Hạn giao khách</div><div class="text-sm font-bold text-sky-700 font-mono" id="modalDeadline">16:00 Hôm nay</div></div></div><div><div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">TIẾN TRÌNH THEO NHÓM XỬ LÝ (2 NHÓM)</span><span class="text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200/70">Đơn đa luồng</span></div><div class="space-y-3" id="modalMultiGroupsContainer"><div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2"><div class="flex items-center justify-between"><div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span><span class="text-xs font-extrabold uppercase text-slate-800 tracking-tight">NHÓM 1: ĐỒ TRẮNG</span><span class="text-[11px] text-slate-500 font-medium">(3 món · 1.5 kg)</span></div><span class="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Đang sấy · Sấy 02 (còn 8p)</span></div><div class="grid grid-cols-4 gap-2 text-[11px] pt-1"><div class="flex items-center space-x-1 font-bold text-emerald-700"><span>✓</span><span>Phân loại</span></div><div class="flex items-center space-x-1 font-bold text-emerald-700"><span>✓</span><span>Giặt (Máy 02 - Xong)</span></div><div class="flex items-center space-x-1 font-extrabold text-amber-600"><span>●</span><span>Sấy (Sấy 02 - 8p)</span></div><div class="flex items-center space-x-1 font-semibold text-slate-400"><span>○</span><span>Xếp đồ</span></div></div></div><div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2"><div class="flex items-center justify-between"><div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span><span class="text-xs font-extrabold uppercase text-slate-800 tracking-tight">NHÓM 2: ĐỒ MÀU</span><span class="text-[11px] text-slate-500 font-medium">(2 món · 2.0 kg)</span></div><span class="text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">Đang giặt · Máy 01 (còn 16p)</span></div><div class="grid grid-cols-4 gap-2 text-[11px] pt-1"><div class="flex items-center space-x-1 font-bold text-emerald-700"><span>✓</span><span>Phân loại</span></div><div class="flex items-center space-x-1 font-extrabold text-sky-600"><span>●</span><span>Giặt (Máy 01 - 16p)</span></div><div class="flex items-center space-x-1 font-semibold text-slate-400"><span>○</span><span>Sấy</span></div><div class="flex items-center space-x-1 font-semibold text-slate-400"><span>○</span><span>Xếp đồ</span></div></div></div></div></div><div class="p-3 bg-amber-50/80 rounded-xl border border-amber-200/80 flex items-center justify-between text-xs"><div class="flex items-center space-x-2"><span class="text-amber-600 font-bold text-sm">ℹ</span><span class="text-amber-900 font-medium">Chờ hoàn tất Đồ màu để đủ bộ giao khách. Nút gửi tin khách sẽ mở khóa khi mọi nhóm hoàn tất.</span></div></div><div class="grid grid-cols-2 gap-4"><div class="border border-slate-200/80 rounded-xl p-3 bg-white"><div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Phân bố món theo nhóm</div><ul class="text-xs space-y-1 text-slate-700 font-medium"><li class="flex justify-between border-b border-slate-100 pb-1"><span class="text-slate-500 font-bold">[Đồ trắng]</span> <span>3 Áo sơ mi trắng, 1 Khăn</span></li><li class="flex justify-between pt-1"><span class="text-slate-500 font-bold">[Đồ màu]</span> <span>2 Quần tây xanh, 1 Áo thun đen</span></li></ul></div><div class="border border-slate-200/80 rounded-xl p-3 bg-white flex flex-col justify-between"><div><div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Gói dịch vụ</div><div class="text-xs font-bold text-sky-700">Giặt riêng chia màu + Sấy tiêu chuẩn</div></div><div class="mt-2 pt-2 border-t border-slate-100"><div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-0.5">Ghi chú giặt</div><div class="text-xs text-slate-600 italic">"Ủi phẳng cổ áo sơ mi trắng, không dùng nước xả mùi nồng cho đồ màu"</div></div></div></div></div>
+<!-- MODAL FOOTER WITH [Chỉnh giờ hẹn] -->
+<div class="px-6 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between"><button class="px-4 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition" onclick="closeModal()">Đóng</button><div class="flex items-center space-x-2"><button class="px-3 py-2 rounded-lg border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 transition" onclick="closeModal(); openRescheduleModal(activeOrderId, 'feasible');">⏱ Chỉnh giờ hẹn</button><button class="px-3.5 py-2 rounded-lg bg-slate-200 text-slate-400 text-xs font-bold cursor-not-allowed flex items-center space-x-1.5" disabled="" id="modalNotifyBtn" title="Chỉ gửi khi tất cả nhóm hoàn thành"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Gửi tin khách (Khóa)</span></button><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition" id="modalPrimaryBtn" onclick="handleModalAction()">Xử lý tác vụ nhóm</button></div></div>
+</div>
+</div>
+<!-- IOT STATUS TOAST -->
+<div class="fixed bottom-6 right-6 z-50 transform transition-all duration-300 translate-y-24 opacity-0 pointer-events-none" id="iotNotification">
+<div class="bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 border border-slate-700">
+<div class="w-6 h-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin flex-shrink-0" id="iotSpinner"></div>
+<svg class="w-6 h-6 text-emerald-400 hidden flex-shrink-0" fill="none" id="iotCheck" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<div class="text-xs">
+<div class="font-bold" id="iotToastTitle">IoT ghi nhận kết nối</div>
+<div class="text-slate-300 text-[11px] mt-0.5" id="iotToastDesc">Đang đồng bộ cảm biến lồng giặt...</div>
+</div>
+</div>
+</div><div class="fixed inset-0 z-50 hidden transition-opacity duration-200 flex items-center justify-center p-4" id="clientNotifyModal"><div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onclick="closeNotifyModal()"></div><div class="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10"><div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50"><div class="flex items-center space-x-2"><div class="w-6 h-6 rounded-md bg-sky-600 text-white flex items-center justify-center text-xs font-bold"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><h3 class="font-extrabold text-xs text-slate-900 uppercase tracking-tight">Gửi thông báo</h3></div><button class="w-6 h-6 rounded-md text-slate-400 hover:text-slate-600 flex items-center justify-center text-xs" onclick="closeNotifyModal()">✕</button></div><div class="p-4 space-y-3"><div class="flex items-center justify-between"><span class="text-xs font-extrabold text-slate-800" id="notifyCustomerNameDisplay">Nguyễn Văn A</span><span class="text-[11px] font-mono text-slate-400" id="notifyCustomerPhoneDisplay">0901 234 567</span></div><div><label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nội dung tin nhắn SMS / Zalo</label><textarea class="w-full p-2.5 text-xs font-medium text-slate-700 rounded-lg border border-slate-200 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none leading-relaxed bg-slate-50/50" id="notifyMessageText" rows="3">Đơn #119 đã hoàn thành. Anh/chị có thể đến nhận đồ.</textarea></div><div class="flex items-center justify-between text-[11px] text-slate-400 font-medium"><span class="flex items-center"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>Zalo OA WashTrack</span><span>Miễn phí</span></div></div><div class="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-2"><button class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition" onclick="document.getElementById('notifyMessageText').focus()" type="button">Chỉnh sửa</button><button class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95 flex items-center space-x-1" id="btnConfirmSendClientMsg" onclick="sendClientNotification()" type="button"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span>Gửi</span></button></div></div></div>
+<script>
+  // Sample Orders Database
+  const orderData = {
+    '123': {
+      id: '#123',
+      customer: 'Nguyễn Văn A',
+      phone: '0901 234 567',
+      statusText: 'Ưu tiên ngay',
+      statusColor: 'bg-amber-50 text-amber-700 border-amber-200/80',
+      action: 'LẤY ĐỒ RA · MÁY 02',
+      deadline: '15:00 Hôm nay',
+      deadlineRaw: '15:00',
+      machineTitle: 'Máy Giặt 02 (Lồng ngang 9kg)',
+      machineDesc: 'Cảm biến IoT báo hoàn tất giặt lúc 14:48 · Cần lấy ra để đưa vào Máy Sấy 01 hoặc gấp.',
+      service: 'Giặt sấy tiêu chuẩn',
+      note: 'Nước xả dịu nhẹ, ủi phẳng nẹp cổ & tay áo.',
+      items: [
+        { name: 'Áo sơ mi công sở', qty: '3 cái' },
+        { name: 'Quần tây nam', qty: '2 cái' },
+        { name: 'Khăn cotton', qty: '1 cái' }
+      ],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 3,
+      primaryAction: 'Mở cửa & Lấy đồ'
+    },
+    '128': {
+      id: '#128',
+      customer: 'Trần Minh Anh',
+      phone: '0988 776 655',
+      statusText: 'Hàng đợi giặt',
+      statusColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
+      action: 'VÀO MÁY GIẶT 01',
+      deadline: '15:30 Hôm nay',
+      deadlineRaw: '15:30',
+      machineTitle: 'Máy Giặt 01 (Hiện đang TRỐNG)',
+      machineDesc: 'Đã phân loại xong. Bỏ túi giặt vào lồng máy 01 và bấm chế độ giặt nhanh 35p.',
+      service: 'Giặt sấy nhanh 1h',
+      note: 'Dùng nước giặt cho đồ thể thao, sấy gió mát.',
+      items: [
+        { name: 'Áo thun thể thao', qty: '4 cái' },
+        { name: 'Quần short dù', qty: '3 cái' }
+      ],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 2,
+      primaryAction: 'Khởi động Máy 01'
+    },
+    '131': {
+      id: '#131',
+      customer: 'Lê Thị Mai',
+      phone: '0912 345 678',
+      statusText: 'Cần phân loại',
+      statusColor: 'bg-slate-100 text-slate-700 border-slate-200',
+      action: 'PHÂN LOẠI CHĂN MỀN',
+      deadline: '16:20 Hôm nay',
+      deadlineRaw: '16:20',
+      machineTitle: 'Bàn phân loại Khu A',
+      machineDesc: 'Kiểm tra vết ố trên ruột chăn, gắn thẻ RFID vào góc viền mền trước khi đưa vào giặt công nghiệp.',
+      service: 'Giặt hấp chăn ga gối',
+      note: 'Có vết cà phê ở góc chăn, cần tẩy điểm trước.',
+      items: [
+        { name: 'Vỏ chăn bông King size', qty: '1 cái' },
+        { name: 'Ruột gối lông vũ', qty: '2 cái' }
+      ],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 1,
+      primaryAction: 'Xác nhận Đã phân loại'
+    },
+    '135': {
+      id: '#135',
+      customer: 'Hoàng Nam',
+      phone: '0933 555 888',
+      statusText: 'Chờ gấp xếp',
+      statusColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+      action: 'XẾP ĐỒ & ĐÓNG GÓI',
+      deadline: '16:40 Hôm nay',
+      deadlineRaw: '16:40',
+      machineTitle: 'Bàn đóng gói số 2',
+      machineDesc: 'Đồ sấy xong thơm khô, nhiệt độ phòng. Gấp theo khuôn chuẩn và đóng túi zip kèm thẻ mã #135.',
+      service: 'Giặt sấy & Gấp gọn',
+      note: 'Gấp gọn phẳng, cho vào túi hút chân không.',
+      items: [
+        { name: 'Áo khoác phao gió', qty: '1 cái' },
+        { name: 'Áo hoodie nỉ', qty: '2 cái' }
+      ],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 4,
+      primaryAction: 'Xác nhận Đã xếp xong'
+    },
+    '140': {
+      id: '#140',
+      customer: 'Nguyễn An',
+      phone: '0977 123 456',
+      statusText: 'Sắp tới',
+      statusColor: 'bg-slate-100 text-slate-600 border-slate-200',
+      action: 'TIẾP NHẬN & PHÂN LOẠI',
+      deadline: '17:55 Hôm nay',
+      deadlineRaw: '17:55',
+      machineTitle: 'Chưa gán máy',
+      machineDesc: 'Shipper đang lấy đồ tại địa chỉ khách hàng.',
+      service: 'Giặt ủi cao cấp',
+      note: 'Khách yêu cầu không dùng nước xả có mùi quá nồng.',
+      items: [{ name: 'Đồ hỗn hợp hàng ngày', qty: 'Khoảng 4.5kg' }],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 0,
+      primaryAction: 'Tiếp nhận đơn'
+    },
+    '145': {
+      id: '#145',
+      customer: 'Trần Mai',
+      phone: '0944 889 900',
+      statusText: 'Sắp tới',
+      statusColor: 'bg-slate-100 text-slate-600 border-slate-200',
+      action: 'TIẾP NHẬN & PHÂN LOẠI',
+      deadline: '18:10 Hôm nay',
+      deadlineRaw: '18:10',
+      machineTitle: 'Chưa gán máy',
+      machineDesc: 'Đơn đặt qua App WashTrack.',
+      service: 'Giặt sấy tiêu chuẩn',
+      note: 'Khách VIP hạng Vàng - Ưu tiên sấy thơm tinh dầu lavender.',
+      items: [{ name: 'Đồ gia đình tổng hợp', qty: 'Khoảng 6.0kg' }],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 0,
+      primaryAction: 'Tiếp nhận đơn'
+    }
+  };
+
+  let activeOrderId = null;
+  let activeRescheduleId = '128';
+  let currentRescheduleMode = 'feasible';
+
+  // ==========================================
+  // MODAL: ORDER DETAIL
+  // ==========================================
+  function openOrderDetail(orderId) {
+    const data = orderData[orderId];
+    if (!data) return;
+    activeOrderId = orderId;
+
+    document.getElementById('modalOrderId').innerText = data.id;
+    document.getElementById('modalCustomerInfo').innerText = `${data.customer} · ${data.phone}`;
+    
+    const badge = document.getElementById('modalStatusBadge');
+    badge.className = `text-[11px] font-bold px-2 py-0.5 rounded-full border ${data.statusColor}`;
+    badge.innerText = data.statusText;
+
+    document.getElementById('modalActionTitle').innerText = data.action;
+    document.getElementById('modalDeadline').innerText = data.deadline;
+    document.getElementById('modalMachineTitle').innerText = data.machineTitle;
+    document.getElementById('modalMachineDesc').innerText = data.machineDesc;
+    document.getElementById('modalServiceType').innerText = data.service;
+    document.getElementById('modalNote').innerText = `"${data.note}"`;
+    document.getElementById('modalPrimaryBtn').innerText = data.primaryAction;
+
+    const itemsContainer = document.getElementById('modalItemList');
+    itemsContainer.innerHTML = data.items.map(item => `
+      <li class="flex items-center justify-between border-b border-slate-100 pb-1 last:border-0 last:pb-0">
+        <span>• ${item.name}</span>
+        <span class="font-bold text-slate-900">${item.qty}</span>
+      </li>
+    `).join('');
+
+    const timelineContainer = document.getElementById('modalTimeline');
+    timelineContainer.innerHTML = data.steps.map((step, idx) => {
+      const isCompleted = idx < data.currentStep;
+      const isCurrent = idx === data.currentStep;
+      
+      let circleClass = 'bg-slate-100 text-slate-400 border-slate-200';
+      let textClass = 'text-slate-400';
+      
+      if (isCompleted) {
+        circleClass = 'bg-emerald-500 text-white border-emerald-500';
+        textClass = 'text-emerald-700 font-semibold';
+      } else if (isCurrent) {
+        circleClass = 'bg-sky-600 text-white ring-2 ring-sky-300 ring-offset-1 border-sky-600';
+        textClass = 'text-sky-800 font-bold';
+      }
+
+      return `
+        <div class="flex flex-col items-center">
+          <div class="w-6 h-6 rounded-full border text-[10px] flex items-center justify-center font-bold mb-1 ${circleClass}">
+            ${isCompleted ? '✓' : (idx + 1)}
+          </div>
+          <span class="text-[10px] leading-tight ${textClass}">${step}</span>
+        </div>
+      `;
+    }).join('');
+
+    const modal = document.getElementById('orderModal');
+    const card = document.getElementById('modalCard');
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      card.classList.remove('scale-95', 'opacity-0');
+      card.classList.add('scale-100', 'opacity-100');
+    });
+  }
+
+  function closeModal() {
+    const card = document.getElementById('modalCard');
+    card.classList.remove('scale-100', 'opacity-100');
+    card.classList.add('scale-95', 'opacity-0');
+    setTimeout(() => {
+      document.getElementById('orderModal').classList.add('hidden');
+    }, 180);
+  }
+
+  function handleModalAction() {
+    if (activeOrderId) {
+      showIotToast('Tác vụ cập nhật', `Đã cập nhật trạng thái đơn #${activeOrderId} thành công!`, true);
+      closeModal();
+    }
+  }
+
+  // ==========================================
+  // MODAL A: TẠO ĐƠN HÀNG (TIME → RESULT → ACTION)
+  // ==========================================
+  function openCreateOrderModal() {
+    document.getElementById('createOrderModal').classList.remove('hidden');
+    checkCreateTimeFeasibility();
+  }
+
+  function closeCreateOrderModal() {
+    document.getElementById('createOrderModal').classList.add('hidden');
+  }
+
+  function setCreateTimePreset(timeStr) {
+    document.getElementById('newDesiredTime').value = timeStr;
+    checkCreateTimeFeasibility();
+  }
+
+  function checkCreateTimeFeasibility() {
+    const timeVal = document.getElementById('newDesiredTime').value.trim();
+    const resultBox = document.getElementById('createFeasibilityResult');
+    const resultTitle = document.getElementById('createResultTitle');
+    const resultSub = document.getElementById('createResultSub');
+    const resultIcon = document.getElementById('createResultIcon');
+    const suggestWrap = document.getElementById('createSuggestionWrapper');
+    const submitBtn = document.getElementById('btnSubmitCreateOrder');
+
+    // Feasible if >= 15:00, Not feasible if earlier (e.g. 14:40)
+    const isFeasible = timeVal >= '15:00';
+
+    if (isFeasible) {
+      resultBox.className = 'p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 text-xs flex items-center justify-between transition-all';
+      resultIcon.className = 'w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px] flex-shrink-0';
+      resultIcon.innerText = '✓';
+      resultTitle.className = 'font-extrabold text-emerald-900';
+      resultTitle.innerText = `✓ ${timeVal} - Có thể hoàn thành`;
+      resultSub.className = 'text-[11px] text-emerald-700 font-medium';
+      resultSub.innerText = 'Máy 01 (trống) & Sấy 01 đáp ứng khung giờ';
+      suggestWrap.classList.add('hidden');
+
+      submitBtn.innerText = 'Tạo đơn';
+      submitBtn.className = 'px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+      submitBtn.onclick = confirmCreateNewOrder;
+    } else {
+      resultBox.className = 'p-3 rounded-xl border border-rose-200 bg-rose-50/80 text-xs flex items-center justify-between transition-all';
+      resultIcon.className = 'w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-[10px] flex-shrink-0';
+      resultIcon.innerText = '✕';
+      resultTitle.className = 'font-extrabold text-rose-900';
+      resultTitle.innerText = `✕ ${timeVal} - Sớm nhất 15:30`;
+      resultSub.className = 'text-[11px] text-rose-700 font-medium';
+      resultSub.innerText = 'Các máy hiện đang kín tải, cần tối thiểu 38 phút';
+      suggestWrap.classList.remove('hidden');
+
+      submitBtn.innerText = 'Chọn 15:30 & Tạo';
+      submitBtn.className = 'px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+      submitBtn.onclick = () => {
+        applySuggestedCreateTime('15:30');
+        confirmCreateNewOrder();
+      };
+    }
+  }
+
+  function applySuggestedCreateTime(time) {
+    document.getElementById('newDesiredTime').value = time;
+    checkCreateTimeFeasibility();
+  }
+
+  function confirmCreateNewOrder() {
+    const customer = document.getElementById('newCustomerName').value.trim() || 'Khách hàng mới';
+    const item = document.getElementById('newItemType').value;
+    const time = document.getElementById('newDesiredTime').value.trim() || '15:30';
+    const newId = '148';
+
+    // Register in database
+    orderData[newId] = {
+      id: '#' + newId,
+      customer: customer,
+      phone: '0918 882 119',
+      statusText: 'Hàng đợi giặt',
+      statusColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
+      action: 'VÀO MÁY GIẶT 01',
+      deadline: `${time} Hôm nay`,
+      deadlineRaw: time,
+      machineTitle: 'Máy Giặt 01 (Hiện đang TRỐNG)',
+      machineDesc: `Đơn mới tạo - Khách hẹn ${time}. Cho vào máy 01 ngay.`,
+      service: document.getElementById('newServiceType').value,
+      note: 'Đơn mới tạo từ quầy.',
+      items: [{ name: item, qty: document.getElementById('newWeight').value + ' kg' }],
+      steps: ['Tiếp nhận', 'Phân loại', 'Đang giặt', 'Sấy', 'Xếp đồ', 'Trả khách'],
+      currentStep: 1,
+      primaryAction: 'Khởi động máy'
+    };
+
+    closeCreateOrderModal();
+
+    // Insert into Queue at priority position 2 with subtle movement animation
+    insertOrderIntoQueue({
+      id: newId,
+      customer: customer,
+      action: 'VÀO MÁY GIẶT 01',
+      item: item,
+      deadline: time
+    });
+
+    showIotToast('Tạo đơn thành công', `Đơn #${newId} (${customer}) đã xếp vào hàng đợi!`, true);
+  }
+
+  function insertOrderIntoQueue({ id, customer, action, item, deadline }) {
+    const queue = document.getElementById('queueContainer');
+    const existingRows = [...queue.querySelectorAll('[data-order-id]')];
+
+    const newRow = document.createElement('div');
+    newRow.className = 'queue-row-animate cursor-pointer group relative bg-white rounded-xl p-4 border border-slate-200 shadow-sm transition hover:border-sky-300 hover:shadow-md flex items-center justify-between select-none opacity-0 translate-y-3';
+    newRow.setAttribute('data-order-id', id);
+    newRow.id = `order-row-${id}`;
+    newRow.onclick = () => openOrderDetail(id);
+
+    newRow.innerHTML = `
+      <div class="flex items-center space-x-4">
+        <div class="priority-badge flex flex-col items-center justify-center w-7 flex-shrink-0 pl-1">
+          <span class="star-icon hidden text-amber-500 text-sm font-bold leading-none">★</span>
+          <span class="rank-num text-xs font-extrabold text-slate-400 mt-0.5">2</span>
+        </div>
+        <div class="bag-handle cursor-grab active:cursor-grabbing w-10 h-10 rounded-xl bg-sky-50 border-2 border-sky-300/80 flex items-center justify-center text-sky-600 flex-shrink-0 hover:scale-110 hover:border-sky-500 shadow-sm transition group/bag relative" data-can-drop-machine="true" data-order-id="${id}" data-target-type="washer" draggable="true" title="Kéo túi này vào Máy giặt trống bên phải">
+          <svg class="w-6 h-6 pointer-events-none" fill="none" stroke="currentColor" viewbox="0 0 32 32">
+            <path d="M9 11C9 8 11 7 16 7C21 7 23 8 23 11L25 24C25 26.5 23 28 16 28C9 28 7 26.5 7 24L9 11Z" fill="#E0F2FE" stroke="#0284C7" stroke-linejoin="round" stroke-width="1.75"></path>
+            <path d="M12 7C12 5.5 13 4 16 4C19 4 20 5.5 20 7" stroke="#0284C7" stroke-linecap="round" stroke-width="1.75"></path>
+            <ellipse cx="16" cy="7" fill="#0284C7" rx="3.5" ry="1.5" stroke="#0284C7" stroke-width="1.2"></ellipse>
+          </svg>
+        </div>
+        <div class="flex flex-col">
+          <div class="flex items-center space-x-2">
+            <span class="action-heading text-base font-extrabold tracking-tight text-slate-900 uppercase group-hover:text-sky-700 transition">
+              ${action}
+            </span>
+            <span class="urgent-tag hidden text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full">
+              Ưu tiên ngay
+            </span>
+            <span class="text-[10px] font-bold text-sky-700 bg-sky-100/70 border border-sky-200 px-2 py-0.5 rounded-full">
+              Đơn mới
+            </span>
+          </div>
+          <div class="text-sm font-semibold text-slate-600 mt-0.5">
+            ${customer} <span class="text-slate-400 font-medium">·</span> <span class="text-sky-700 font-bold">#${id}</span>
+          </div>
+          <div class="text-xs text-slate-400 font-medium flex items-center space-x-2">
+            <span>${item}</span>
+            <span class="text-slate-300">·</span>
+            <span class="order-deadline-text font-semibold text-slate-600">Hẹn ${deadline}</span>
+            <button onclick="event.stopPropagation(); openRescheduleModal('${id}', 'normal')" class="text-[10px] font-bold text-sky-600 hover:text-sky-800 underline ml-1">
+              Chỉnh giờ hẹn
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <div class="flex items-center text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-3 py-1.5 rounded-lg">
+          <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          </svg>
+          IoT Sẵn sàng
+        </div>
+      </div>
+    `;
+
+    // Insert at index 1 (under the very top active task) or at top
+    if (existingRows.length > 1) {
+      queue.insertBefore(newRow, existingRows[1]);
+    } else {
+      queue.appendChild(newRow);
+    }
+
+    // Trigger bag drag listener on new element
+    initBagToMachine();
+
+    requestAnimationFrame(() => {
+      newRow.classList.remove('opacity-0', 'translate-y-3');
+      recalculateQueuePriority();
+    });
+  }
+
+  // ==========================================
+  // MODAL B: CHỈNH GIỜ HẸN / ĐÔN ĐƠN (TIME → RESULT → ACTION)
+  // ==========================================
+  function openRescheduleModal(orderId, mode = 'feasible') {
+    activeRescheduleId = orderId || '128';
+    const data = orderData[activeRescheduleId] || { customer: 'Khách hàng', deadlineRaw: '15:30' };
+    
+    document.getElementById('rescheduleOrderSubtitle').innerText = `Đơn #${activeRescheduleId} · ${data.customer}`;
+    document.getElementById('currentScheduleTimeDisplay').innerText = data.deadlineRaw || '15:30';
+
+    simulateRescheduleMode(mode);
+    document.getElementById('rescheduleModal').classList.remove('hidden');
+  }
+
+  function closeRescheduleModal() {
+    document.getElementById('rescheduleModal').classList.add('hidden');
+  }
+
+  function simulateRescheduleMode(mode) {
+    currentRescheduleMode = mode;
+    const box = document.getElementById('rescheduleResultBox');
+    const tag = document.getElementById('rescheduleStatusTag');
+    const shift = document.getElementById('rescheduleTimeShift');
+    const msg = document.getElementById('rescheduleMessage');
+    const altWrap = document.getElementById('rescheduleAltOption');
+    const confirmBtn = document.getElementById('btnConfirmReschedule');
+    const currentDue = document.getElementById('currentScheduleTimeDisplay').innerText;
+
+    altWrap.classList.add('hidden');
+
+    if (mode === 'normal') {
+      // ĐỔI GIỜ MUỘN HƠN (15:00 → 15:30)
+      document.getElementById('inputNewScheduleTime').value = '15:30';
+      shift.innerText = `${currentDue} → 15:30`;
+      tag.innerText = '✓ GIỜ MỚI HỢP LỆ';
+      tag.className = 'text-xs font-black tracking-tight text-slate-700 uppercase';
+      msg.innerText = 'Đổi giờ muộn hơn giúp giãn tải xưởng. Đơn sẽ hạ bậc ưu tiên tự động.';
+      msg.className = 'text-xs font-medium text-slate-600';
+      box.className = 'p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-1.5 transition-all';
+      confirmBtn.innerText = 'Xác nhận';
+      confirmBtn.className = 'px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+    } 
+    else if (mode === 'feasible') {
+      // ĐÔN ĐƠN 1: CÓ THỂ ĐÔN (FEASIBLE)
+      document.getElementById('inputNewScheduleTime').value = '14:30';
+      shift.innerText = `${currentDue} → 14:30`;
+      tag.innerText = '✓ CÓ THỂ ĐÔN';
+      tag.className = 'text-xs font-black tracking-tight text-emerald-800 uppercase';
+      msg.innerText = 'Các đơn khác vẫn đúng giờ ✓. Đơn này sẽ lập tức được đôn lên ưu tiên #1.';
+      msg.className = 'text-xs font-medium text-emerald-800';
+      box.className = 'p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/80 space-y-1.5 transition-all';
+      confirmBtn.innerText = 'Xác nhận';
+      confirmBtn.className = 'px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+    } 
+    else if (mode === 'affects') {
+      // ĐÔN ĐƠN 2: ẢNH HƯỞNG ĐƠN KHÁC (AFFECTS OTHERS)
+      document.getElementById('inputNewScheduleTime').value = '14:30';
+      shift.innerText = `#123 (${currentDue} → 14:30)`;
+      tag.innerText = '⚠ ẢNH HƯỞNG ĐƠN KHÁC';
+      tag.className = 'text-xs font-black tracking-tight text-amber-800 uppercase';
+      msg.innerText = '#128 ⚠ trễ thêm +10 phút nếu ưu tiên xử lý đơn này trước.';
+      msg.className = 'text-xs font-semibold text-amber-900';
+      box.className = 'p-3.5 rounded-xl border border-amber-300 bg-amber-50 space-y-1.5 transition-all';
+      confirmBtn.innerText = 'Vẫn đôn';
+      confirmBtn.className = 'px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+    } 
+    else if (mode === 'impossible') {
+      // ĐÔN ĐƠN 3: KHÔNG THỂ ĐÔN (NOT FEASIBLE)
+      document.getElementById('inputNewScheduleTime').value = '14:30';
+      shift.innerText = 'Sớm nhất: 14:50';
+      tag.innerText = '✕ KHÔNG THỂ 14:30';
+      tag.className = 'text-xs font-black tracking-tight text-rose-800 uppercase';
+      msg.innerText = 'Máy sấy đang kín tải và thời gian giặt tối thiểu là 35 phút.';
+      msg.className = 'text-xs font-medium text-rose-800';
+      box.className = 'p-3.5 rounded-xl border border-rose-200 bg-rose-50 space-y-1.5 transition-all';
+      altWrap.classList.remove('hidden');
+      confirmBtn.innerText = 'Chọn 14:50';
+      confirmBtn.className = 'px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition active:scale-95';
+    }
+  }
+
+  function applyAltRescheduleTime() {
+    document.getElementById('inputNewScheduleTime').value = '14:50';
+    simulateRescheduleMode('feasible');
+  }
+
+  function validateRescheduleTimeManual() {
+    const val = document.getElementById('inputNewScheduleTime').value.trim();
+    if (val <= '14:35') {
+      simulateRescheduleMode('impossible');
+    } else if (val < '15:00') {
+      simulateRescheduleMode('affects');
+    } else if (val < '15:30') {
+      simulateRescheduleMode('feasible');
+    } else {
+      simulateRescheduleMode('normal');
+    }
+  }
+
+  function confirmRescheduleAction() {
+    const newTime = document.getElementById('inputNewScheduleTime').value.trim() || '14:30';
+    const row = document.getElementById(`order-row-${activeRescheduleId}`);
+    
+    // Update local data
+    if (orderData[activeRescheduleId]) {
+      orderData[activeRescheduleId].deadlineRaw = newTime;
+      orderData[activeRescheduleId].deadline = `${newTime} Hôm nay`;
+    }
+
+    if (row) {
+      const deadlineEl = row.querySelector('.order-deadline-text');
+      if (deadlineEl) deadlineEl.innerText = `Hẹn ${newTime}`;
+    }
+
+    closeRescheduleModal();
+
+    // Reorder rows dynamically based on new urgency
+    applyDynamicQueueShift(activeRescheduleId, currentRescheduleMode, newTime);
+  }
+
+  // Animation & queue recalculation when rescheduling
+  function applyDynamicQueueShift(orderId, mode, newTime) {
+    const queue = document.getElementById('queueContainer');
+    const row = document.getElementById(`order-row-${orderId}`);
+    if (!row) return;
+
+    if (mode === 'feasible' || mode === 'affects') {
+      // Promote item to Top #1 with smooth animation
+      row.style.transform = 'scale(1.02)';
+      row.style.borderColor = '#0284c7';
+      
+      setTimeout(() => {
+        queue.prepend(row);
+        row.style.transform = 'scale(1)';
+        recalculateQueuePriority();
+        showIotToast('Đã đôn đơn thành công', `Đơn #${orderId} được nâng lên vị trí ưu tiên #1 (${newTime})`, true);
+      }, 200);
+
+    } else if (mode === 'normal') {
+      // Push down towards lower ranking
+      row.style.transform = 'scale(0.98)';
+      setTimeout(() => {
+        queue.appendChild(row);
+        row.style.transform = 'scale(1)';
+        recalculateQueuePriority();
+        showIotToast('Đã lùi giờ hẹn', `Đơn #${orderId} đã chuyển sang ${newTime} và hạ mức ưu tiên.`, true);
+      }, 200);
+    } else {
+      recalculateQueuePriority();
+    }
+  }
+
+  // ==========================================
+  // MODAL C: CẢNH BÁO ĐƠN CÓ NGUY CƠ TRỄ
+  // ==========================================
+  function openDelayWarningModal(orderId) {
+    const order = orderData[orderId] || orderData['123'];
+    document.getElementById('delayModalHeading').innerText = `⚠ ĐƠN ${order.id} CÓ NGUY CƠ TRỄ`;
+    document.getElementById('delayCurrentDue').innerText = order.deadlineRaw || '15:00';
+    document.getElementById('delayEstimated').innerText = '15:20 (+20p)';
+    document.getElementById('delaySuggestedTime').innerText = '15:30';
+    document.getElementById('delayWarningModal').classList.remove('hidden');
+  }
+
+  function closeDelayWarningModal() {
+    document.getElementById('delayWarningModal').classList.add('hidden');
+  }
+
+  function selectDelaySuggestedTime() {
+    confirmDelayReschedule('123', '15:30');
+  }
+
+  function confirmDelayReschedule(orderId, newTime) {
+    closeDelayWarningModal();
+    if (orderData[orderId]) {
+      orderData[orderId].deadlineRaw = newTime;
+      orderData[orderId].deadline = `${newTime} Hôm nay`;
+    }
+    const row = document.getElementById(`order-row-${orderId}`);
+    if (row) {
+      const deadlineEl = row.querySelector('.order-deadline-text');
+      if (deadlineEl) deadlineEl.innerText = `Hẹn ${newTime}`;
+    }
+    showIotToast('Đã cập nhật giờ hẹn', `Đã dời giờ hẹn đơn #${orderId} sang ${newTime} theo đề xuất`, true);
+    recalculateQueuePriority();
+  }
+
+  // ==========================================
+  // QUEUE PRIORITY ENGINE & RECALCULATION
+  // ==========================================
+  function recalculateQueuePriority() {
+    const rows = [...document.querySelectorAll('#queueContainer > [data-order-id]')];
+    const countEl = document.getElementById('queueCount');
+    if (countEl) countEl.innerText = rows.length;
+
+    rows.forEach((row, index) => {
+      const rank = index + 1;
+      const star = row.querySelector('.star-icon');
+      const rankNum = row.querySelector('.rank-num');
+      const urgentTag = row.querySelector('.urgent-tag');
+
+      if (rank === 1) {
+        row.classList.remove('border-slate-200');
+        row.classList.add('border-2', 'border-sky-400/80', 'shadow-md', 'shadow-sky-500/5');
+        if (star) star.classList.remove('hidden');
+        if (rankNum) {
+          rankNum.innerText = '1';
+          rankNum.className = 'rank-num text-xs font-extrabold text-sky-700 mt-0.5';
+        }
+        if (urgentTag) urgentTag.classList.remove('hidden');
+      } else {
+        row.classList.remove('border-sky-400/80', 'border-2', 'shadow-md', 'shadow-sky-500/5');
+        row.classList.add('border', 'border-slate-200');
+        if (star) star.classList.add('hidden');
+        if (rankNum) {
+          rankNum.innerText = rank.toString();
+          rankNum.className = 'rank-num text-xs font-extrabold text-slate-400 mt-0.5';
+        }
+        if (urgentTag) urgentTag.classList.add('hidden');
+      }
+    });
+  }
+
+  function completeManualTask(orderId, taskName) {
+    const item = document.getElementById(`order-row-${orderId}`);
+    if (item) {
+      item.style.transition = 'all 0.3s ease';
+      item.style.opacity = '0';
+      item.style.transform = 'translateX(20px)';
+      setTimeout(() => {
+        item.remove();
+        recalculateQueuePriority();
+        showIotToast('Hoàn tất tác vụ', `Đã hoàn thành ${taskName} cho đơn #${orderId}!`, true);
+      }, 300);
+    }
+  }
+
+  // ==========================================
+  // DRAG LAUNDRY BAG TO MACHINE LOGIC
+  // ==========================================
+  let isBagDragging = false;
+
+  function initBagToMachine() {
+    const bagHandles = document.querySelectorAll('.bag-handle[data-can-drop-machine="true"]');
+    const machineCards = document.querySelectorAll('.machine-card');
+
+    bagHandles.forEach(bag => {
+      bag.addEventListener('dragstart', (e) => {
+        isBagDragging = true;
+        const orderId = bag.getAttribute('data-order-id');
+        const targetType = bag.getAttribute('data-target-type') || 'washer';
+        
+        e.dataTransfer.setData('application/json', JSON.stringify({ orderId, targetType }));
+        e.dataTransfer.effectAllowed = 'copy';
+
+        highlightMachines(targetType);
+      });
+
+      bag.addEventListener('dragend', () => {
+        isBagDragging = false;
+        resetMachinesHighlight();
+      });
+    });
+
+    machineCards.forEach(card => {
+      card.addEventListener('dragover', (e) => {
+        if (!isBagDragging) return;
+        const machineState = card.getAttribute('data-machine-state');
+        if (machineState === 'idle') {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          card.classList.add('dragover-active');
+        }
+      });
+
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('dragover-active');
+      });
+
+      card.addEventListener('drop', (e) => {
+        if (!isBagDragging) return;
+        e.preventDefault();
+        card.classList.remove('dragover-active');
+
+        const machineState = card.getAttribute('data-machine-state');
+        if (machineState !== 'idle') return;
+
+        try {
+          const payload = JSON.parse(e.dataTransfer.getData('application/json'));
+          handleBagDroppedOnMachine(payload.orderId, card);
+        } catch(err) {
+          console.error(err);
+        }
+      });
+    });
+  }
+
+  function highlightMachines(compatibleType) {
+    const machineCards = document.querySelectorAll('.machine-card');
+    machineCards.forEach(card => {
+      const type = card.getAttribute('data-machine-type');
+      const state = card.getAttribute('data-machine-state');
+
+      if (type === compatibleType && state === 'idle') {
+        card.classList.add('machine-drop-target');
+        const badge = card.querySelector('.machine-status-badge');
+        if (badge) {
+          badge.setAttribute('data-prev-text', badge.innerText);
+          badge.innerText = 'THẢ VÀO ĐÂY';
+          badge.className = 'machine-status-badge text-[10px] font-extrabold text-sky-600 animate-pulse';
+        }
+      } else {
+        card.classList.add('machine-dimmed');
+      }
+    });
+  }
+
+  function resetMachinesHighlight() {
+    const machineCards = document.querySelectorAll('.machine-card');
+    machineCards.forEach(card => {
+      card.classList.remove('machine-drop-target', 'dragover-active', 'machine-dimmed');
+      const badge = card.querySelector('.machine-status-badge');
+      if (badge && badge.hasAttribute('data-prev-text')) {
+        badge.innerText = badge.getAttribute('data-prev-text');
+        badge.className = 'machine-status-badge text-[11px] font-semibold text-slate-400';
+        badge.removeAttribute('data-prev-text');
+      }
+    });
+  }
+
+  function handleBagDroppedOnMachine(orderId, machineCard) {
+    resetMachinesHighlight();
+    const machineName = machineCard.getAttribute('data-machine-name') || 'Máy 01';
+    const orderRow = document.getElementById(`order-row-${orderId}`);
+
+    showIotToast(
+      'Đang đợi cảm biến IoT xác nhận cửa đóng...',
+      `Đã nhận túi đồ #${orderId} tại ${machineName}. Vui lòng đóng chặt cửa máy.`,
+      false
+    );
+
+    setTimeout(() => {
+      showIotToast(
+        'IoT xác nhận cửa đã đóng & bắt đầu!',
+        `${machineName} bắt đầu chu trình giặt (35 phút).`,
+        true
+      );
+
+      machineCard.setAttribute('data-machine-state', 'running');
+      machineCard.className = 'machine-card flex flex-col items-center p-2.5 rounded-xl border border-sky-200 bg-sky-50/30 text-center transition-all duration-300';
+      
+      const svgBox = machineCard.querySelector('.washer-svg-box');
+      if (svgBox) {
+        svgBox.className = 'washer-svg-box w-12 h-14 bg-white border-2 border-sky-500 rounded-lg p-1 flex flex-col justify-between shadow-2xs relative';
+        const dot = svgBox.querySelector('.status-dot');
+        if (dot) dot.className = 'status-dot w-1.5 h-1.5 rounded-full bg-sky-500';
+        const drum = svgBox.querySelector('.washer-drum');
+        if (drum) drum.className = 'washer-drum w-8 h-8 mx-auto rounded-full border-2 border-sky-400 bg-sky-50 flex items-center justify-center overflow-hidden';
+        const core = svgBox.querySelector('.drum-core');
+        if (core) core.className = 'drum-core w-5 h-5 rounded-full border border-dashed border-sky-600 spin-slow flex items-center justify-center';
+      }
+
+      const badge = machineCard.querySelector('.machine-status-badge');
+      if (badge) {
+        badge.className = 'machine-status-badge text-[11px] font-bold text-sky-600';
+        badge.innerText = '35 phút';
+      }
+
+      if (orderRow) {
+        orderRow.style.transition = 'all 0.4s ease';
+        orderRow.style.opacity = '0';
+        orderRow.style.transform = 'translateY(-10px)';
+        setTimeout(() => {
+          orderRow.remove();
+          recalculateQueuePriority();
+        }, 400);
+      }
+    }, 1400);
+  }
+
+  // ==========================================
+  // OPERATIONAL POPUP ALERTS
+  // ==========================================
+  const alertConfig = {
+    machine_done: {
+      type: 'normal',
+      targetId: '123',
+      badge: '✓ Máy 02 đã xong',
+      sub: '#123 · LẤY ĐỒ RA',
+      bg: 'bg-white',
+      border: 'border-emerald-300',
+      iconBg: 'bg-emerald-500 text-white',
+      icon: '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      duration: 8000,
+      pulseType: 'green'
+    },
+    machine_delay: {
+      type: 'reminder',
+      targetId: '123',
+      badge: '⚠ Đồ còn trong Máy 02',
+      sub: '#123 · 5 phút · LẤY ĐỒ RA',
+      bg: 'bg-white',
+      border: 'border-amber-300',
+      iconBg: 'bg-amber-500 text-white',
+      icon: '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      duration: 9000,
+      pulseType: 'rose'
+    }
+  };
+
+  function triggerAlert(alertKey) {
+    const cfg = alertConfig[alertKey];
+    if (!cfg) return;
+
+    const alertStack = document.getElementById('alertStack');
+    const alertId = 'alert-' + Date.now();
+
+    const card = document.createElement('div');
+    card.id = alertId;
+    card.className = `pointer-events-auto flex items-center justify-between p-3 rounded-xl shadow-lg border ${cfg.border} ${cfg.bg} transition-all duration-300 transform translate-x-12 opacity-0 cursor-pointer hover:shadow-xl group`;
+    
+    card.innerHTML = `
+      <div class="flex items-center space-x-2.5 flex-1 min-w-0" onclick="focusQueueItem('${cfg.targetId}', '${cfg.pulseType}')">
+        <div class="w-6 h-6 rounded-lg ${cfg.iconBg} flex items-center justify-center flex-shrink-0">
+          ${cfg.icon}
+        </div>
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-bold text-slate-800 tracking-tight truncate">${cfg.badge}</span>
+          <span class="text-[11px] font-semibold text-slate-500 mt-0.5 truncate">${cfg.sub}</span>
+        </div>
+      </div>
+      <div class="flex items-center space-x-1 pl-2">
+        <button onclick="event.stopPropagation(); dismissAlert('${alertId}')" class="text-slate-300 hover:text-slate-500 p-1 rounded-md transition" title="Đóng">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    `;
+
+    alertStack.appendChild(card);
+
+    requestAnimationFrame(() => {
+      card.classList.remove('translate-x-12', 'opacity-0');
+      card.classList.add('translate-x-0', 'opacity-100');
+    });
+
+    setTimeout(() => {
+      dismissAlert(alertId);
+    }, cfg.duration);
+  }
+
+  function dismissAlert(alertId) {
+    const el = document.getElementById(alertId);
+    if (el) {
+      el.classList.add('translate-x-12', 'opacity-0');
+      setTimeout(() => el.remove(), 250);
+    }
+  }
+
+  function focusQueueItem(orderId, pulseType) {
+    const row = document.getElementById(`order-row-${orderId}`);
+    if (!row) return;
+
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const pulseClass = pulseType === 'green' ? 'row-highlight-pulse-green' : 'row-highlight-pulse';
+    row.classList.remove('row-highlight-pulse', 'row-highlight-pulse-green');
+    void row.offsetWidth;
+    row.classList.add(pulseClass);
+
+    setTimeout(() => {
+      row.classList.remove(pulseClass);
+    }, 2500);
+  }
+
+  // ==========================================
+  // TOAST NOTIFICATION
+  // ==========================================
+  let toastTimeout = null;
+  function showIotToast(title, desc, isDone = false) {
+    const toast = document.getElementById('iotNotification');
+    const spinner = document.getElementById('iotSpinner');
+    const check = document.getElementById('iotCheck');
+    
+    document.getElementById('iotToastTitle').innerText = title;
+    document.getElementById('iotToastDesc').innerText = desc;
+
+    if (isDone) {
+      spinner.classList.add('hidden');
+      check.classList.remove('hidden');
+    } else {
+      spinner.classList.remove('hidden');
+      check.classList.add('hidden');
+    }
+
+    toast.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+    
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+      toast.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+    }, 3500);
+  }
+
+  // INITIALIZE
+  document.addEventListener('DOMContentLoaded', () => {
+    initBagToMachine();
+    recalculateQueuePriority();
+
+    // Trigger initial gentle alert
+    setTimeout(() => {
+      triggerAlert('machine_done');
+    }, 500);
+  });
+
+  // Escape key closes modals
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModal();
+      closeCreateOrderModal();
+      closeRescheduleModal();
+      closeDelayWarningModal();
+    }
+  });
+</script>
+</body></html>
