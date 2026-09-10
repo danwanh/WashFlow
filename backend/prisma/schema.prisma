@@ -11,3 +11,214 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum ServiceType {
+  WASH
+  DRY
+  WASH_DRY
+}
+
+enum OrderStatus {
+  RECEIVED
+  WAITING
+  FOLDING_PACKING
+  READY
+  COMPLETED
+}
+
+enum BatchStatus {
+  WAITING
+  WASHING
+  DRYING
+  WAITING_FOR_UNLOAD
+  COMPLETED
+}
+
+enum StageStatus {
+  PLANNED
+  IN_PROGRESS
+  MACHINE_FINISHED
+  COMPLETED
+}
+
+enum MachineType {
+  WASHER
+  DRYER
+}
+
+enum MachineStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+  MAINTENANCE
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+}
+
+enum AlertStatus {
+  OPEN
+  SNOOZED
+  RESOLVED
+}
+
+model Customer {
+  customerId Int            @id @default(autoincrement()) @map("customer_id")
+  name       String         @db.VarChar(100)
+  phone      String         @db.VarChar(12)
+  createdAt  DateTime       @default(now()) @map("created_at")
+  orders     LaundryOrder[]
+
+  @@map("customers")
+}
+
+model LaundryOrder {
+  orderId            Int                  @id @default(autoincrement()) @map("order_id")
+  customerId         Int                  @map("customer_id")
+  serviceType        ServiceType          @map("service_type")
+  status             OrderStatus          @default(RECEIVED)
+  totalWeightKg      Decimal              @map("total_weight_kg") @db.Decimal(5, 2)
+  pickupAt           DateTime             @map("pickup_at")
+  estimatedAt        DateTime             @map("estimated_at")
+  priority           Int                  @default(0)
+  specialNote        String?              @map("special_note") @db.Text
+  classifiedAt       DateTime?            @map("classified_at")
+  packingCompletedAt DateTime?            @map("packing_completed_at")
+  readyAt            DateTime?            @map("ready_at")
+  completedAt        DateTime?            @map("completed_at")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  customer           Customer             @relation(fields: [customerId], references: [customerId])
+  items              OrderItem[]
+  batches            OrderBatch[]
+  appointments       AppointmentHistory[]
+  notifications      Notification[]
+  alerts             Alert[]
+
+  @@index([status, pickupAt])
+  @@index([pickupAt])
+  @@map("laundry_orders")
+}
+
+model OrderItem {
+  orderItemId Int          @id @default(autoincrement()) @map("order_item_id")
+  orderId     Int          @map("order_id")
+  itemType    String       @map("item_type") @db.VarChar(50)
+  quantity    Int
+  weightKg    Decimal?     @map("weight_kg") @db.Decimal(5, 2)
+  note        String?      @db.Text
+  order       LaundryOrder @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  batchItems  BatchItem[]
+
+  @@map("order_items")
+}
+
+model OrderBatch {
+  batchId      Int          @id @default(autoincrement()) @map("batch_id")
+  orderId      Int          @map("order_id")
+  batchNo      Int          @map("batch_no")
+  weightKg     Decimal      @map("weight_kg") @db.Decimal(5, 2)
+  status       BatchStatus  @default(WAITING)
+  currentStage String?      @map("current_stage") @db.VarChar(20)
+  estimatedAt  DateTime?    @map("estimated_at")
+  completedAt  DateTime?    @map("completed_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  order        LaundryOrder @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  items        BatchItem[]
+  stages       BatchStage[]
+  alerts       Alert[]
+
+  @@unique([orderId, batchNo])
+  @@map("order_batches")
+}
+
+model BatchItem {
+  batchItemId Int        @id @default(autoincrement()) @map("batch_item_id")
+  batchId     Int        @map("batch_id")
+  orderItemId Int        @map("order_item_id")
+  weightKg    Decimal    @map("weight_kg") @db.Decimal(5, 2)
+  batch       OrderBatch @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+  orderItem   OrderItem  @relation(fields: [orderItemId], references: [orderItemId])
+
+  @@unique([batchId, orderItemId])
+  @@map("batch_items")
+}
+
+model BatchStage {
+  batchStageId            Int         @id @default(autoincrement()) @map("batch_stage_id")
+  batchId                 Int         @map("batch_id")
+  machineId               Int?        @map("machine_id")
+  stage                   String      @db.VarChar(20)
+  status                  StageStatus @default(PLANNED)
+  plannedStartAt          DateTime?   @map("planned_start_at")
+  plannedEndAt            DateTime?   @map("planned_end_at")
+  actualStartedAt         DateTime?   @map("actual_started_at")
+  actualMachineFinishedAt DateTime?   @map("actual_machine_finished_at")
+  actualEndedAt           DateTime?   @map("actual_ended_at")
+  batch                   OrderBatch  @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+  machine                 Machine?    @relation(fields: [machineId], references: [machineId])
+
+  @@index([machineId, status])
+  @@map("batch_stages")
+}
+
+model Machine {
+  machineId         Int           @id @default(autoincrement()) @map("machine_id")
+  name              String        @db.VarChar(100)
+  type              MachineType
+  status            MachineStatus @default(AVAILABLE)
+  capacityKg        Decimal       @map("capacity_kg") @db.Decimal(5, 2)
+  processingMinutes Int           @map("processing_minutes")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  stages            BatchStage[]
+
+  @@map("machines")
+}
+
+model AppointmentHistory {
+  appointmentHistoryId Int          @id @default(autoincrement()) @map("appointment_history_id")
+  orderId              Int          @map("order_id")
+  oldPickupAt          DateTime     @map("old_pickup_at")
+  newPickupAt          DateTime     @map("new_pickup_at")
+  estimatedAt          DateTime     @map("estimated_at")
+  reason               String?      @db.Text
+  createdAt            DateTime     @default(now()) @map("created_at")
+  order                LaundryOrder @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+
+  @@map("appointment_history")
+}
+
+model Notification {
+  notificationId Int                @id @default(autoincrement()) @map("notification_id")
+  orderId        Int                @map("order_id")
+  type           String             @db.VarChar(30)
+  channel        String             @db.VarChar(20)
+  status         NotificationStatus
+  content        String             @db.Text
+  sentAt         DateTime?          @map("sent_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  order          LaundryOrder       @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Alert {
+  alertId      Int          @id @default(autoincrement()) @map("alert_id")
+  orderId      Int          @map("order_id")
+  batchId      Int?         @map("batch_id")
+  type         String       @db.VarChar(30)
+  severity     String       @db.VarChar(20)
+  status       AlertStatus  @default(OPEN)
+  reason       String       @db.Text
+  detectedAt   DateTime     @default(now()) @map("detected_at")
+  snoozedUntil DateTime?    @map("snoozed_until")
+  resolvedAt   DateTime?    @map("resolved_at")
+  order        LaundryOrder @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  batch        OrderBatch?  @relation(fields: [batchId], references: [batchId])
+
+  @@index([status, detectedAt])
+  @@map("alerts")
+}

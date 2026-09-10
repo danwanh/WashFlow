@@ -1346,108 +1346,311 @@ interface CreateOrderModalV1Props {
   onCreate: () => void
 }
 
+type DraftOrderItem = {
+  id: number
+  itemType: string
+  quantity: string
+  weight: string
+  note: string
+}
+
+const quickItemTypes = [
+  'Đồ trắng',
+  'Đồ màu',
+  'Khăn / đồ nặng',
+  'Đồ thể thao',
+  'Đồ mỏng / dễ hỏng',
+  'Đồ đặc biệt',
+]
+
 function CreateOrderModalV1({ onClose, onCreate }: CreateOrderModalV1Props) {
+  const [step, setStep] = useState<'details' | 'plan'>('details')
+  const [customer, setCustomer] = useState('')
+  const [phone, setPhone] = useState('')
+  const [service, setService] = useState('WASH_DRY')
+  const [pickupAt, setPickupAt] = useState('16:00')
+  const [specialNote, setSpecialNote] = useState('')
+  const [items, setItems] = useState<DraftOrderItem[]>([
+    { id: 1, itemType: 'Đồ trắng', quantity: '1', weight: '1.5', note: '' },
+  ])
+
+  const totalWeight = items.reduce((total, item) => total + Number(item.weight || 0), 0)
+  const totalItems = items.reduce((total, item) => total + Number(item.quantity || 0), 0)
+  const estimatedAt = totalWeight > 4 ? '16:20' : '15:45'
+  const isFeasible = pickupAt >= estimatedAt
+
+  const addItem = (itemType = '') => {
+    setItems((current) => [
+      ...current,
+      { id: Date.now(), itemType, quantity: '1', weight: '', note: '' },
+    ])
+  }
+
+  const updateItem = (id: number, field: keyof DraftOrderItem, value: string) => {
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
+    )
+  }
+
   return (
     <ModalFrame
-      title="Tạo đơn hàng mới & Tính giá"
+      title={step === 'details' ? 'Tạo đơn hàng mới' : 'Xác nhận kế hoạch xử lý'}
       onClose={onClose}
-      className="create-modal-v1"
+      className="create-modal-v1 create-order-spec-modal"
       icon={<Plus size={18} />}
     >
-      <div className="modal-body create-order-body">
-        <div className="create-fields">
-          <label>
-            Khách hàng
-            <input defaultValue="Nguyễn Văn A" placeholder="Tên khách hàng..." />
-          </label>
-          <label>
-            Giờ khách hẹn lấy
-            <div className="time-check">
-              <input defaultValue="16:00" />
-              <button type="button">Kiểm tra</button>
-            </div>
-          </label>
-        </div>
-        <div className="field-block">
-          <div className="field-heading">
-            <label>Chọn nhanh loại đồ</label>
-          </div>
-          <div className="item-chips">
-            <button type="button">
-              <b>+ Đồ trắng</b>
-              <small>1.5kg</small>
-            </button>
-            <button type="button">
-              <b>+ Đồ màu</b>
-              <small>2.0kg</small>
-            </button>
-            <button type="button">
-              <b>+ Chăn mền</b>
-              <small>1 cái</small>
-            </button>
-          </div>
-        </div>
-        <div className="field-block">
-          <div className="field-heading">
-            <label>Danh sách đồ đã chọn (3 món)</label>
-            <button className="split-toggle" type="button">
-              ⚡ Chia nhóm xử lý <b>2 nhóm</b>
-            </button>
-          </div>
-          <div className="partition-box">
-            <PartitionRow
-              tone="blue"
-              title="Nhóm 1 (Đồ trắng)"
-              hint="Gợi ý: Máy 02 / Sấy 02"
-              item="Áo sơ mi trắng"
-              weight="1.5 kg"
-              price="37.500đ"
-            />
-            <PartitionRow
-              tone="amber"
-              title="Nhóm 2 (Đồ màu)"
-              hint="Gợi ý: Máy 01"
-              item="Quần tây & áo thun màu"
-              weight="2.0 kg"
-              price="55.000đ"
-            />
-            <div className="partition-footer">
-              <button type="button">+ Thêm nhóm xử lý mới</button>
-            </div>
-          </div>
-        </div>
-        <div className="service-total">
-          <label>
-            Dịch vụ
-            <select defaultValue="Giặt chia màu + Sấy">
-              <option>Giặt chia màu + Sấy</option>
-              <option>Giặt sấy tiêu chuẩn</option>
-              <option>Chỉ Giặt</option>
-              <option>Giặt hấp cao cấp</option>
-            </select>
-          </label>
-          <div className="total-box">
-            <span>
-              TỔNG TIỀN TẠM TÍNH<small>2 nhóm xử lý</small>
+      {step === 'details' ? (
+        <div className="modal-body create-order-body">
+          <div className="spec-stepper">
+            <span className="active">
+              <b>1</b> Thông tin đơn
             </span>
-            <b>92.500đ</b>
+            <i />
+            <span>
+              <b>2</b> Kế hoạch thử
+            </span>
+          </div>
+          <div className="create-fields">
+            <label>
+              Tên khách hàng *
+              <input
+                value={customer}
+                onChange={(event) => setCustomer(event.target.value)}
+                placeholder="Nhập tên khách hàng"
+              />
+            </label>
+            <label>
+              Số điện thoại
+              <input
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="0901 234 567"
+              />
+            </label>
+          </div>
+          <div className="create-fields">
+            <label>
+              Dịch vụ *
+              <select value={service} onChange={(event) => setService(event.target.value)}>
+                <option value="WASH">Giặt</option>
+                <option value="DRY">Sấy</option>
+                <option value="WASH_DRY">Giặt + Sấy</option>
+              </select>
+            </label>
+            <label>
+              Giờ hẹn nhận đồ *
+              <input
+                className="time-input"
+                type="time"
+                value={pickupAt}
+                onChange={(event) => setPickupAt(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="field-block">
+            <div className="field-heading">
+              <label>Danh sách đồ *</label>
+              <span>
+                {totalItems} món · {totalWeight.toFixed(1)} kg
+              </span>
+            </div>
+            <div className="item-chips spec-quick-items">
+              {quickItemTypes.map((itemType) => (
+                <button key={itemType} type="button" onClick={() => addItem(itemType)}>
+                  <b>+ {itemType}</b>
+                </button>
+              ))}
+            </div>
+            <div className="order-items-list">
+              {items.map((item, index) => (
+                <div className="order-item-row" key={item.id}>
+                  <strong>{index + 1}</strong>
+                  <input
+                    aria-label="Loại đồ"
+                    value={item.itemType}
+                    onChange={(event) => updateItem(item.id, 'itemType', event.target.value)}
+                    placeholder="Loại đồ"
+                  />
+                  <input
+                    aria-label="Số lượng"
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(event) => updateItem(item.id, 'quantity', event.target.value)}
+                    placeholder="SL"
+                  />
+                  <div className="weight-input">
+                    <input
+                      aria-label="Khối lượng"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={item.weight}
+                      onChange={(event) => updateItem(item.id, 'weight', event.target.value)}
+                      placeholder="Kg"
+                    />
+                    <small>kg</small>
+                  </div>
+                  <input
+                    aria-label="Ghi chú món đồ"
+                    value={item.note}
+                    onChange={(event) => updateItem(item.id, 'note', event.target.value)}
+                    placeholder="Ghi chú"
+                  />
+                  <button
+                    className="remove-item"
+                    type="button"
+                    onClick={() =>
+                      setItems((current) => current.filter((entry) => entry.id !== item.id))
+                    }
+                    aria-label="Xóa món đồ"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button className="add-item-button" type="button" onClick={() => addItem()}>
+              + Thêm loại đồ
+            </button>
+          </div>
+          <label className="special-note">
+            Ghi chú đặc biệt
+            <textarea
+              value={specialNote}
+              onChange={(event) => setSpecialNote(event.target.value)}
+              placeholder="Ví dụ: không dùng nước xả, cần xử lý riêng..."
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="modal-body create-order-body plan-body">
+          <div className="spec-stepper">
+            <span className="done">
+              <b>✓</b> Thông tin đơn
+            </span>
+            <i className="done" />
+            <span className="active">
+              <b>2</b> Kế hoạch thử
+            </span>
+          </div>
+          <div className="plan-summary">
+            <div>
+              <small>KHÁCH HÀNG</small>
+              <b>{customer || 'Chưa nhập tên'}</b>
+              <span>{phone || 'Chưa có số điện thoại'}</span>
+            </div>
+            <div>
+              <small>DỊCH VỤ</small>
+              <b>{service === 'WASH' ? 'Giặt' : service === 'DRY' ? 'Sấy' : 'Giặt + Sấy'}</b>
+              <span>Hẹn nhận lúc {pickupAt}</span>
+            </div>
+            <div>
+              <small>ĐƠN HÀNG</small>
+              <b>{items.length} nhóm đồ</b>
+              <span>
+                {totalWeight.toFixed(1)} kg · {totalItems} món
+              </span>
+            </div>
+          </div>
+          <div className="plan-section">
+            <div className="plan-section-heading">
+              <div>
+                <b>1. Nhóm tương thích</b>
+                <span>Hệ thống không gộp các loại đồ không tương thích</span>
+              </div>
+              <em>{items.length} nhóm</em>
+            </div>
+            {items.map((item, index) => (
+              <div className="plan-group" key={item.id}>
+                <span className={`group-dot ${index % 2 ? 'amber-dot' : 'blue-dot'}`} />
+                <div>
+                  <b>
+                    Nhóm {index + 1} · {item.itemType || 'Chưa phân loại'}
+                  </b>
+                  <small>
+                    {item.quantity} món · {Number(item.weight || 0).toFixed(1)} kg
+                  </small>
+                </div>
+                <strong>{index % 2 ? 'Máy giặt 01' : 'Máy giặt 02'}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="plan-section">
+            <div className="plan-section-heading">
+              <div>
+                <b>2. Lịch chạy thử</b>
+                <span>ETA được tính từ tải máy và thời gian xử lý</span>
+              </div>
+            </div>
+            <div className="trial-timeline">
+              <span>
+                <i>1</i>
+                <b>Phân loại</b>
+                <small>Ngay sau khi tạo</small>
+              </span>
+              <span>
+                <i>2</i>
+                <b>Giặt</b>
+                <small>15:00 - 15:30</small>
+              </span>
+              {service !== 'WASH' && (
+                <span>
+                  <i>3</i>
+                  <b>Sấy</b>
+                  <small>15:30 - {estimatedAt}</small>
+                </span>
+              )}
+              <span>
+                <i>✓</i>
+                <b>Hoàn tất</b>
+                <small>{estimatedAt}</small>
+              </span>
+            </div>
+          </div>
+          <div className={`plan-feasibility ${isFeasible ? 'feasible' : 'not-feasible'}`}>
+            {isFeasible ? <CheckCircle2 size={21} /> : <AlertTriangle size={21} />}
+            <div>
+              <b>
+                {isFeasible
+                  ? `Khả thi · ETA ${estimatedAt} · Đúng giờ hẹn`
+                  : `Không khả thi · ETA ${estimatedAt} sau giờ hẹn`}
+              </b>
+              <small>
+                {isFeasible
+                  ? 'Kế hoạch chưa được lưu. Xác nhận để tạo đơn và chốt lịch chạy.'
+                  : 'Vui lòng đổi giờ hẹn hoặc điều chỉnh kế hoạch trước khi tạo đơn.'}
+              </small>
+            </div>
           </div>
         </div>
-        <div className="feasibility">
-          <CheckCircle2 size={20} />
-          <div>
-            <b>✓ 16:00 khả thi | Tổng 92.500đ</b>
-            <small>Nhóm lâu nhất hoàn tất lúc 15:45 · Kịp giờ hẹn khách</small>
-          </div>
-        </div>
-      </div>
+      )}
       <footer>
         <button className="secondary" onClick={onClose}>
           Hủy
         </button>
-        <button className="primary" onClick={onCreate}>
-          Tạo đơn
-        </button>
+        {step === 'plan' && (
+          <button className="secondary back-button" onClick={() => setStep('details')}>
+            ← Sửa thông tin
+          </button>
+        )}
+        {step === 'details' ? (
+          <button
+            className="primary"
+            disabled={
+              !customer ||
+              items.length === 0 ||
+              items.some((item) => !item.itemType || !item.weight)
+            }
+            onClick={() => setStep('plan')}
+          >
+            Xem kế hoạch thử <ChevronRight size={15} />
+          </button>
+        ) : (
+          <button className="primary" disabled={!isFeasible} onClick={onCreate}>
+            Xác nhận và tạo đơn <Check size={15} />
+          </button>
+        )}
       </footer>
     </ModalFrame>
   )
