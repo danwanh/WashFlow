@@ -16,6 +16,7 @@ export type PlanItem = {
 export type PlannedBatch = {
   batchNo: number
   weightKg: number
+  group: string
   items: { itemIndex: number; weightKg: number }[]
   stages: {
     stage: 'WASH' | 'DRY'
@@ -163,6 +164,7 @@ export function buildPlan(input: {
           feasible: false,
           earliestFeasiblePickup: null,
           batches: [],
+          compatibilityGroups: [],
           warnings: ['NO_FEASIBLE_MACHINE'],
         }
       candidates.sort(
@@ -195,6 +197,7 @@ export function buildPlan(input: {
     planned.push({
       batchNo: i + 1,
       weightKg: batch.weightKg,
+      group: batch.group,
       items: batch.items,
       stages,
     })
@@ -210,6 +213,18 @@ export function buildPlan(input: {
     earliestFeasiblePickup: iso(estimated),
     estimatedAt: iso(estimated),
     batches: planned,
+    compatibilityGroups: Array.from(
+      new Map(
+        batches.map((batch) => [
+          batch.group,
+          {
+            group: batch.group,
+            itemIndices: batch.items.map((item) => item.itemIndex),
+            totalWeightKg: batch.weightKg,
+          },
+        ]),
+      ).values(),
+    ),
     warnings: estimated > input.pickupAt ? ['PICKUP_TOO_EARLY'] : [],
   }
 }

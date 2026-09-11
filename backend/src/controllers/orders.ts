@@ -24,6 +24,10 @@ export async function plan(req: Request, res: Response) {
     !b.items.length
   )
     fail(400, 'INVALID_INPUT', 'Customer and at least one item are required')
+  if (typeof b.customer.name !== 'string' || b.customer.name.trim().length < 2)
+    fail(400, 'INVALID_INPUT', 'Customer name must contain at least 2 characters')
+  if (typeof b.customer.phone !== 'string' || !/^\+?[0-9 ()-]{8,20}$/.test(b.customer.phone))
+    fail(400, 'INVALID_INPUT', 'Invalid customer phone')
   if (!['WASH', 'DRY', 'WASH_DRY'].includes(b.service_type))
     fail(400, 'INVALID_INPUT', 'Invalid service_type')
   const pickupAt = getDate(b.pickup_at, 'pickup_at')
@@ -32,6 +36,7 @@ export async function plan(req: Request, res: Response) {
       !x.item_type ||
       !Number.isInteger(x.quantity) ||
       x.quantity <= 0 ||
+      !Number.isFinite(Number(x.weight_kg)) ||
       Number(x.weight_kg) <= 0
     )
       fail(400, 'INVALID_INPUT', 'Invalid item')
@@ -73,7 +78,7 @@ export async function plan(req: Request, res: Response) {
       : null,
     customer: b.customer,
     items: b.items,
-    compatibility_groups: [],
+    compatibility_groups: result.compatibilityGroups,
     batches: result.batches,
     affected_orders: [],
     warnings: result.warnings,

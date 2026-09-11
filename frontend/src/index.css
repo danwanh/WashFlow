@@ -1999,16 +1999,23 @@ button.done {
 /* Create-order flow follows the spec: collect input, review trial plan, then confirm. */
 .create-order-spec-modal {
   width: min(720px, calc(100% - 32px));
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
 }
 .create-order-spec-modal .modal-body {
-  max-height: 78vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   padding: 18px 22px 22px;
   overflow-y: auto;
 }
 .spec-stepper {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
   color: #94a3b8;
   font-size: 10px;
   font-weight: 800;
@@ -2041,7 +2048,7 @@ button.done {
   color: #0369a1;
 }
 .spec-stepper i {
-  width: 34px;
+  width: clamp(52px, 16%, 120px);
   height: 1px;
   background: #e2e8f0;
 }
@@ -2150,7 +2157,7 @@ button.done {
 }
 .plan-summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 .plan-summary > div {
@@ -2242,6 +2249,108 @@ button.done {
   align-items: flex-start;
   padding: 8px 0 4px;
 }
+.batch-schedules {
+  display: grid;
+  gap: 8px;
+}
+.batch-schedule {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+}
+.batch-schedule-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.batch-schedule-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.batch-schedule-heading b {
+  color: #334155;
+  font-size: 11px;
+}
+.batch-schedule-heading small {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 15px;
+}
+.batch-schedule-heading strong {
+  flex: 0 0 auto;
+  color: #0369a1;
+  font: 700 10px monospace;
+}
+.schedule-progress {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 18px 0;
+}
+.schedule-progress-step {
+  position: relative;
+  display: grid;
+  flex: 1;
+  justify-items: center;
+  gap: 5px;
+  color: #0369a1;
+  font-size: 9px;
+  text-align: center;
+}
+.schedule-progress-step:not(:last-child)::after {
+  position: absolute;
+  top: 11px;
+  left: calc(50% + 13px);
+  width: calc(100% - 26px);
+  height: 3px;
+  content: '';
+  border-radius: 3px;
+  background: #bae6fd;
+}
+.schedule-progress-node {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #38bdf8;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #0369a1;
+  font: 800 10px monospace;
+}
+.schedule-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.schedule-stage {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+.schedule-stage i {
+  color: #0369a1;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.schedule-stage b,
+.schedule-stage span {
+  color: #475569;
+  font-size: 10px;
+}
+.schedule-stage span {
+  color: #64748b;
+  font-family: monospace;
+}
 .trial-timeline > span {
   position: relative;
   display: grid;
@@ -2314,6 +2423,7 @@ button.done {
   color: #92400e;
 }
 .create-order-spec-modal footer {
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -2323,6 +2433,15 @@ button.done {
 .create-order-spec-modal footer button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+.form-error {
+  padding: 10px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 11px;
+  font-weight: 700;
 }
 @media (max-width: 600px) {
   .create-order-spec-modal {
@@ -2338,6 +2457,12 @@ button.done {
   }
   .spec-quick-items {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .spec-stepper {
+    gap: 7px;
+  }
+  .spec-stepper i {
+    width: 32px;
   }
   .order-item-row {
     grid-template-columns: 18px 1fr 54px 68px 22px;
