@@ -10,7 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "node --test"
+    "test": "tsx --test"
   },
   "keywords": [],
   "author": "",
