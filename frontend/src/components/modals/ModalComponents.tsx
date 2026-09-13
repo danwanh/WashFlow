@@ -257,6 +257,7 @@ export function CreateOrderModal({
         minute: '2-digit',
       })
     : '--:--'
+  const noFeasibleMachine = plan?.warnings.includes('NO_FEASIBLE_MACHINE')
   const pickupTimestamp = () => {
     const [hours, minutes] = pickupAt.split(':').map(Number)
     const date = new Date()
@@ -531,17 +532,25 @@ export function CreateOrderModal({
               ))}
             </div>
             <div className={`plan-feasibility ${plan?.feasible ? 'feasible' : 'not-feasible'}`}>
-              {plan?.feasible ? <CheckCircle2 size={21} /> : <AlertTriangle size={21} />}
+              {plan?.feasible && !noFeasibleMachine ? (
+                <CheckCircle2 size={21} />
+              ) : (
+                <AlertTriangle size={21} />
+              )}
               <div>
                 <b>
-                  {plan?.feasible
-                    ? `Khả thi · ETA ${estimated} · Đúng giờ hẹn`
-                    : `Không khả thi · ETA ${estimated} sau giờ hẹn`}
+                  {noFeasibleMachine
+                    ? 'Không thể lập lịch · Không có máy phù hợp'
+                    : plan?.feasible
+                      ? `Khả thi · ETA ${estimated} · Đúng giờ hẹn`
+                      : `Không khả thi · ETA ${estimated} sau giờ hẹn`}
                 </b>
                 <small>
-                  {plan?.feasible
-                    ? 'Lý do: Máy hiện có đủ thời gian để hoàn tất trước giờ hẹn.'
-                    : 'Lý do: Thời gian xử lý dự kiến vượt quá giờ hẹn của khách.'}
+                  {noFeasibleMachine
+                    ? 'Lý do: Không có máy operational đủ công suất cho công đoạn yêu cầu.'
+                    : plan?.feasible
+                      ? 'Lý do: Máy hiện có đủ thời gian để hoàn tất trước giờ hẹn.'
+                      : 'Lý do: Thời gian xử lý dự kiến vượt quá giờ hẹn của khách.'}
                 </small>
               </div>
             </div>

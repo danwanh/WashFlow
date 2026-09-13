@@ -50,6 +50,16 @@ export async function plan(req: Request, res: Response) {
   })
   const machines = await prisma.machine.findMany({
     where: { status: { in: ['AVAILABLE', 'BUSY'] } },
+    include: {
+      stages: {
+        where: { status: { in: ['PLANNED', 'IN_PROGRESS', 'MACHINE_FINISHED'] } },
+        select: {
+          plannedEndAt: true,
+          actualMachineFinishedAt: true,
+          actualEndedAt: true,
+        },
+      },
+    },
   })
   const result = buildPlan({
     items,
@@ -62,6 +72,10 @@ export async function plan(req: Request, res: Response) {
       capacityKg: Number(m.capacityKg),
       processingMinutes: m.processingMinutes,
       status: m.status,
+      availableAt: m.stages.reduce((availableAt, stage) => {
+        const stageAvailableAt = stage.actualEndedAt ?? stage.plannedEndAt
+        return stageAvailableAt && stageAvailableAt > availableAt ? stageAvailableAt : availableAt
+      }, new Date()),
     })),
   })
   const planId = createPlanId({ ...b, nonce: crypto.randomUUID() })

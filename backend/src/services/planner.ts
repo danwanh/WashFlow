@@ -5,6 +5,7 @@ export type Machine = {
   capacityKg: number
   processingMinutes: number
   status: string
+  availableAt?: Date
 }
 export type PlanItem = {
   index: number
@@ -93,7 +94,9 @@ const typeFor = (stage: Stage) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
 const canMerge = (a: string, b: string) => Boolean(matrix[a]?.[b] || matrix[b]?.[a])
 const availableMachines = (input: PlanInput, stage: Stage) =>
   input.machines.filter(
-    (machine) => machine.status === 'AVAILABLE' && machine.type === typeFor(stage),
+    (machine) =>
+      !['OFFLINE', 'MAINTENANCE'].includes(machine.status) &&
+      machine.type === typeFor(stage),
   )
 
 function maxFeasibleCapacity(input: PlanInput): number | null {
@@ -205,8 +208,8 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
   if (!validBatches(batches, input)) return null
   const availability = new Map(
     input.machines
-      .filter((machine) => machine.status === 'AVAILABLE')
-      .map((machine) => [machine.machineId, input.now.getTime()]),
+      .filter((machine) => !['OFFLINE', 'MAINTENANCE'].includes(machine.status))
+      .map((machine) => [machine.machineId, machine.availableAt?.getTime() ?? input.now.getTime()]),
   )
   const ordered = [...batches].sort(
     (a, b) => b.weightKg - a.weightKg || a.items[0]!.itemIndex - b.items[0]!.itemIndex,
@@ -253,7 +256,7 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
     (latest, batch) => Math.max(latest, new Date(batch.stages.at(-1)!.plannedEndAt).getTime()),
     input.now.getTime(),
   )
-  return { plan: planned, eta: end + 30 * 60_000, unusedCapacity }
+  return { plan: planned, eta: end, unusedCapacity }
 }
 
 function neighbors(source: BatchDraft[], input: PlanInput): BatchDraft[][] {

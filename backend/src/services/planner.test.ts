@@ -130,3 +130,23 @@ test('keeps whole-item allocations and total weight exact', () => {
     ],
   )
 })
+
+test('schedules after an operational busy machine becomes available', () => {
+  const busyUntil = new Date('2026-01-01T08:45:00.000Z')
+  const result = buildPlan({
+    service: 'WASH',
+    now,
+    pickupAt: new Date('2026-01-01T10:00:00.000Z'),
+    machines: [
+      {
+        ...machines[0]!,
+        status: 'BUSY',
+        availableAt: busyUntil,
+      },
+    ],
+    items: [{ index: 1, itemType: 'shirt', quantity: 1, weightKg: 2 }],
+  })
+  assert.equal(result.feasible, true)
+  assert.equal(result.batches[0]?.stages[0]?.plannedStartAt, busyUntil.toISOString())
+  assert.equal(result.estimatedAt, '2026-01-01T09:05:00.000Z')
+})
