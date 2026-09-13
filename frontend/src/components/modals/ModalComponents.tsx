@@ -6,18 +6,34 @@ import {
   CircleHelp,
   Clock3,
   FileText,
+  MessageCircle,
   Plus,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   createOrder,
+  draftReadyNotification,
+  getOrder,
   previewOrder,
   type CreatedOrder,
   type PlanResponse,
   type ServiceType,
 } from '../../api'
 import type { Task } from '../../types/task'
+
+const friendlyBatchStatus: Record<string, string> = {
+  WAITING: 'Đang chờ xử lý',
+  WASHING: 'Đang giặt',
+  DRYING: 'Đang sấy',
+  WAITING_FOR_UNLOAD: 'Chờ dỡ đồ',
+  COMPLETED: 'Đã hoàn tất',
+}
+const serviceLabel: Record<string, string> = {
+  WASH: 'Giặt',
+  DRY: 'Sấy',
+  WASH_DRY: 'Giặt và sấy',
+}
 
 export function ModalFrame({
   children,
@@ -52,7 +68,60 @@ export function ModalFrame({
   )
 }
 
-export function DetailModal({ task, onClose }: { task: Task; onClose: () => void }) {
+export function DetailModal({
+  task,
+  onClose,
+  onAction,
+}: {
+  task: Task
+  onClose: () => void
+  onAction?: () => void
+}) {
+  const [order, setOrder] = useState<Awaited<ReturnType<typeof getOrder>> | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!task.orderId) return
+    void getOrder(task.orderId)
+      .then(setOrder)
+      .catch((cause) =>
+        setError(cause instanceof Error ? cause.message : 'Không thể tải chi tiết đơn'),
+      )
+  }, [task.orderId])
+  const formatTime = (value: string) =>
+    new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+  const stepFor = (batch: NonNullable<typeof order>['batches'][number]) => {
+    if (order?.status === 'RECEIVED') return 1
+    if (order?.status === 'FOLDING_PACKING') return 4
+    if (order?.status === 'READY' || order?.status === 'COMPLETED') return 5
+    if (batch.status === 'COMPLETED') return 4
+    const active = batch.stages.find((stage) => stage.status !== 'COMPLETED')
+    if (!active) return 4
+    return active.stage === 'WASH' ? 2 : 3
+  }
+  const actionLabel = () => {
+    if (!order) return 'Đang tải...'
+    if (order.status === 'RECEIVED') return 'Đã phân loại'
+    if (order.status === 'FOLDING_PACKING') return 'Đã xếp đồ'
+    if (order.status === 'READY') return 'Gửi tin khách'
+    const active =
+      order.batches
+        .find((batch) => batch.batch_id === task.batchId)
+        ?.stages.find((stage) => stage.batch_stage_id === task.batchStageId) ??
+      order.batches.flatMap((batch) => batch.stages).find((stage) => stage.status !== 'COMPLETED')
+    if (!active) return 'Đang xử lý'
+    if (active.status === 'MACHINE_FINISHED') return 'Đã lấy đồ'
+    if (active.status === 'IN_PROGRESS')
+      return active.stage === 'WASH' ? 'Đã giặt xong' : 'Đã sấy xong'
+    return active.stage === 'WASH' ? 'Giặt' : 'Sấy'
+  }
+  const statusText =
+    order?.status === 'READY'
+      ? 'Sẵn sàng lấy'
+      : order?.status === 'FOLDING_PACKING'
+        ? 'Đang xếp đồ'
+        : order?.status === 'WAITING'
+          ? 'Đang xử lý'
+          : 'Mới tiếp nhận'
   return (
     <ModalFrame
       title={`Đơn #${task.id} · ${task.customer}`}
@@ -62,35 +131,63 @@ export function DetailModal({ task, onClose }: { task: Task; onClose: () => void
       <div className="compact-detail-body">
         <div className="compact-summary">
           <div>
-            <small>ĐANG XỬ LÝ</small>
-            <b>2 nhóm xử lý độc lập</b>
-            <span>Gói giặt riêng chia màu + sấy tiêu chuẩn</span>
+            <small>{statusText.toUpperCase()}</small>
+            <b>{order ? `${order.batches.length} mẻ xử lý độc lập` : 'Đang tải chi tiết...'}</b>
+            <span>
+              {order
+                ? `${serviceLabel[order.service_type] ?? 'Xử lý'} · ${order.total_weight_kg.toFixed(1)}kg`
+                : ''}
+            </span>
           </div>
           <div className="compact-deadline">
             <small>HẠN GIAO</small>
-            <strong>16:00</strong>
-            <span>Hôm nay · Đúng hẹn</span>
+            <strong>{order ? formatTime(order.pickup_at) : task.due}</strong>
+            <span>
+              {order && new Date(order.estimated_at) > new Date(order.pickup_at)
+                ? 'Có nguy cơ trễ'
+                : 'Đúng hẹn'}
+            </span>
           </div>
         </div>
+        {error && <p className="queue-error">{error}</p>}
         <div className="compact-groups">
-          <Progress
-            title="Đồ trắng · 3 món · 1.5kg"
-            status="Đang sấy · Sấy 02 · còn 8p"
-            tone="amber"
-            current={2}
-          />
-          <Progress
-            title="Đồ màu · 2 món · 2.0kg"
-            status="Đang giặt · Máy 01 · còn 16p"
-            tone="blue"
-            current={1}
-          />
+          {order?.batches.map((batch) => {
+            const active = batch.stages.find((stage) => stage.status !== 'COMPLETED')
+            const stageName =
+              active?.stage === 'WASH'
+                ? 'Đang giặt'
+                : active?.stage === 'DRY'
+                  ? 'Đang sấy'
+                  : 'Đã hoàn tất máy'
+            const allocatedItems = batch.batch_items
+              .map((allocation) => {
+                const item = order.items.find(
+                  (candidate) => candidate.order_item_id === allocation.order_item_id,
+                )
+                return item
+                  ? `${item.item_type} · ${item.quantity} món`
+                  : `Nhóm #${allocation.order_item_id}`
+              })
+              .join(', ')
+            const machineName = active?.machine_name ? ` · ${active.machine_name}` : ''
+            return (
+              <Progress
+                key={batch.batch_id}
+                title={`Mẻ ${batch.batch_no} · ${batch.weight_kg.toFixed(1)}kg`}
+                status={`${allocatedItems || stageName} · ${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'}${machineName}`}
+                tone={active?.stage === 'DRY' ? 'amber' : 'blue'}
+                current={stepFor(batch)}
+              />
+            )
+          })}
         </div>
         <div className="compact-next">
           <CircleHelp size={16} />
           <span>
-            <b>Tiếp theo</b> · Chờ Đồ màu hoàn tất để giao đủ đơn. Gửi tin khách sẽ mở khóa sau khi
-            cả 2 nhóm xong.
+            <b>Tiếp theo</b> ·{' '}
+            {order?.status === 'READY'
+              ? 'Kiểm tra nội dung rồi gửi tin khách.'
+              : 'Hoàn tất các mẻ còn lại theo thứ tự ưu tiên.'}
           </span>
         </div>
       </div>
@@ -98,8 +195,8 @@ export function DetailModal({ task, onClose }: { task: Task; onClose: () => void
         <button className="secondary" onClick={onClose}>
           Đóng
         </button>
-        <button className="primary">
-          Xử lý tác vụ nhóm <ChevronRight size={14} />
+        <button className="primary" disabled={!onAction || !order} onClick={onAction}>
+          {actionLabel()} <ChevronRight size={14} />
         </button>
       </footer>
     </ModalFrame>
@@ -203,6 +300,93 @@ export function ScenarioModal({
         </button>
         <button className="primary" onClick={onConfirm}>
           {content.action}
+        </button>
+      </footer>
+    </ModalFrame>
+  )
+}
+
+export function ConfirmActionModal({
+  title,
+  message,
+  action,
+  onClose,
+  onConfirm,
+}: {
+  title: string
+  message: string
+  action: string
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <ModalFrame title={title} onClose={onClose}>
+      <div className="scenario-body">
+        <div className="scenario-result">
+          <CheckCircle2 size={18} />
+          <span>{message}</span>
+        </div>
+      </div>
+      <footer>
+        <button className="secondary" onClick={onClose}>
+          Hủy
+        </button>
+        <button className="primary" onClick={onConfirm}>
+          {action}
+        </button>
+      </footer>
+    </ModalFrame>
+  )
+}
+
+export function NotificationModal({
+  orderId,
+  customer,
+  onClose,
+  onSend,
+}: {
+  orderId: number
+  customer: string
+  onClose: () => void
+  onSend: (content: string) => void
+}) {
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    void draftReadyNotification(orderId)
+      .then((draft) => setContent(draft.content))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tạo tin nhắn'))
+      .finally(() => setLoading(false))
+  }, [orderId])
+  return (
+    <ModalFrame title="Gửi tin khách hàng" onClose={onClose}>
+      <div className="scenario-body notify">
+        <h3>
+          Đơn #{orderId} · {customer}
+        </h3>
+        <div className="scenario-result">
+          <MessageCircle size={18} />
+          <span>Kiểm tra nội dung trước khi gửi thông báo hoàn tất.</span>
+        </div>
+        <textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          disabled={loading}
+          aria-label="Nội dung thông báo"
+        />
+        {error && <p className="queue-error">{error}</p>}
+      </div>
+      <footer>
+        <button className="secondary" onClick={onClose}>
+          Hủy
+        </button>
+        <button
+          className="primary"
+          disabled={loading || !content.trim() || Boolean(error)}
+          onClick={() => onSend(content.trim())}
+        >
+          Gửi tin khách
         </button>
       </footer>
     </ModalFrame>

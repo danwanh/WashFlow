@@ -1,5 +1,6 @@
-import { Check, MessageCircle } from 'lucide-react'
+import { Check, Clock, MessageCircle } from 'lucide-react'
 import type { DragEvent, ReactNode } from 'react'
+import type { QueueTask } from '../../api'
 import type { Task } from '../../types/task'
 
 function LaundryBagIcon() {
@@ -33,6 +34,7 @@ function LaundryBagIcon() {
 
 export function TaskCard({
   task,
+  now,
   onClick,
   onComplete,
   onDragStart,
@@ -40,13 +42,34 @@ export function TaskCard({
   onReschedule,
 }: {
   task: Task
+  now: number
   onClick: () => void
   onComplete: () => void
   onDragStart: () => void
   onDragEnd: () => void
   onReschedule: () => void
 }) {
-  const canDrag = task.action.includes('MÁY GIẶT')
+  const canDrag =
+    task.stageStatus === 'PLANNED' &&
+    task.action.includes('VÀO MÁY') &&
+    (!task.plannedStartAt || new Date(task.plannedStartAt).getTime() <= now)
+  const deadline = task.estimatedAt ? new Date(task.estimatedAt).getTime() : 0
+  const due = task.dueAt ? new Date(task.dueAt).getTime() : 0
+  const stageEnd = task.plannedEndAt ? new Date(task.plannedEndAt).getTime() : 0
+  const remaining =
+    task.stageStatus === 'IN_PROGRESS' && stageEnd ? Math.ceil((stageEnd - now) / 60000) : null
+  const timeLabel =
+    task.stageStatus === 'PLANNED' && task.plannedStartAt
+      ? `Đợi ${Math.max(0, Math.ceil((new Date(task.plannedStartAt).getTime() - now) / 60000))} phút`
+      : task.stageStatus === 'IN_PROGRESS'
+        ? remaining !== null && remaining < 0
+          ? `Trễ ${Math.abs(remaining)} phút`
+          : `Còn ${Math.max(0, remaining ?? 0)} phút`
+        : task.stageStatus === 'MACHINE_FINISHED'
+          ? 'Chờ dỡ đồ'
+          : deadline && due && deadline > due
+            ? `Trễ ${Math.ceil((deadline - due) / 60000)} phút`
+            : 'Đúng hẹn'
   return (
     <article className={`task-card ${task.rank === 1 ? 'selected' : ''}`} onClick={onClick}>
       <div className="rank">
@@ -82,10 +105,13 @@ export function TaskCard({
           {task.detail} <i>·</i> <strong>Hẹn {task.due}</strong>
           {task.button !== 'Đôn đơn' && <a>Chỉnh giờ hẹn</a>}
         </div>
+        <div className={`task-timing ${timeLabel.startsWith('Trễ') ? 'late' : ''}`}>
+          <Clock size={13} /> {timeLabel}
+        </div>
       </div>
       <div className="task-action">
         {task.button &&
-          (task.button === '✓  Xong' ? (
+          (['✓  Xong', 'Xong', 'Máy xong', 'Gửi tin khách'].includes(task.button) ? (
             <button
               className="done"
               onClick={(event) => {
@@ -106,6 +132,7 @@ export function TaskCard({
               {task.button === 'Đôn đơn' ? 'Đôn đơn · Chỉnh giờ hẹn' : task.button}
             </button>
           ))}
+        {canDrag && <small className="drag-hint">Kéo túi vào máy phù hợp</small>}
       </div>
     </article>
   )
@@ -149,6 +176,7 @@ function MachineIcon({ tone }: { tone: string }) {
         />
       ) : (
         <circle
+          className="drum-ring"
           cx="36"
           cy="46"
           r="16"
@@ -163,62 +191,68 @@ function MachineIcon({ tone }: { tone: string }) {
 }
 
 export function MachinePane({
+  machines,
+  now,
+  canDrop,
   dropTarget,
   onDragOver,
   onDrop,
+  onUnloadDragStart,
+  onUnloadDragEnd,
 }: {
+  machines: Array<{
+    machine_id: number
+    name: string
+    type: 'WASHER' | 'DRYER'
+    status: string
+    active_task: QueueTask | null
+  }>
+  now: number
+  canDrop: (machine: string) => boolean
   dropTarget: string | null
   onDragOver: (machine: string) => void
   onDrop: (machine: string) => void
+  onUnloadDragStart: (task: QueueTask) => void
+  onUnloadDragEnd: () => void
 }) {
+  const washers = machines.filter((machine) => machine.type === 'WASHER')
+  const dryers = machines.filter((machine) => machine.type === 'DRYER')
+  const machineState = (status: string) =>
+    ({
+      AVAILABLE: 'Trống',
+      BUSY: 'Đang chạy',
+      OFFLINE: 'Ngoại tuyến',
+      MAINTENANCE: 'Bảo trì',
+    })[status] ?? 'Không rõ'
+  const renderMachine = (machine: (typeof machines)[number]) => (
+    <Machine
+      key={machine.machine_id}
+      title={machine.name}
+      state={
+        machine.active_task?.stage_status === 'MACHINE_FINISHED'
+          ? 'Chờ dỡ đồ'
+          : machine.active_task?.planned_end_at
+            ? `Còn ${Math.max(0, Math.ceil((new Date(machine.active_task.planned_end_at).getTime() - now) / 60000))} phút`
+            : machineState(machine.status)
+      }
+      tone={machine.status === 'AVAILABLE' ? 'empty' : machine.status === 'BUSY' ? 'blue' : 'amber'}
+      dropTarget={dropTarget === machine.name}
+      onDragOver={() => onDragOver(machine.name)}
+      canDrop={canDrop(machine.name)}
+      activeTask={machine.active_task}
+      draggable={machine.active_task?.stage_status === 'MACHINE_FINISHED'}
+      onDragStart={() => machine.active_task && onUnloadDragStart(machine.active_task)}
+      onDragEnd={onUnloadDragEnd}
+      onDrop={() => onDrop(machine.name)}
+    />
+  )
   return (
     <aside className="machines-pane">
-      <MachineGroup title="MÁY GIẶT" count="3 MÁY">
-        <Machine
-          title="Máy 01"
-          state="16 phút"
-          tone="blue"
-          tag="#123 · Đồ màu"
-          dropTarget={dropTarget === 'Máy 01'}
-          onDragOver={() => onDragOver('Máy 01')}
-          onDrop={() => onDrop('Máy 01')}
-        />
-        <Machine
-          title="Máy 02"
-          state="Xong"
-          tone="green"
-          tag="#123 · Đồ trắng"
-          dropTarget={dropTarget === 'Máy 02'}
-          onDragOver={() => onDragOver('Máy 02')}
-          onDrop={() => onDrop('Máy 02')}
-        />
-        <Machine
-          title="Máy 03"
-          state="Trống"
-          tone="empty"
-          dropTarget={dropTarget === 'Máy 03'}
-          onDragOver={() => onDragOver('Máy 03')}
-          onDrop={() => onDrop('Máy 03')}
-        />
+      <MachineGroup title="MÁY GIẶT" count={`${washers.length} MÁY`}>
+        {washers.map(renderMachine)}
       </MachineGroup>
-      <MachineGroup title="MÁY SẤY" count="2 MÁY">
-        <Machine
-          title="Sấy 01"
-          state="Trống"
-          tone="empty"
-          dropTarget={dropTarget === 'Sấy 01'}
-          onDragOver={() => onDragOver('Sấy 01')}
-          onDrop={() => onDrop('Sấy 01')}
-        />
-        <Machine
-          title="Sấy 02"
-          state="8 phút"
-          tone="amber"
-          tag="#123 · Đồ trắng"
-          dropTarget={dropTarget === 'Sấy 02'}
-          onDragOver={() => onDragOver('Sấy 02')}
-          onDrop={() => onDrop('Sấy 02')}
-        />
+      <MachineGroup title="MÁY SẤY" count={`${dryers.length} MÁY`}>
+        {dryers.map(renderMachine)}
       </MachineGroup>
     </aside>
   )
@@ -250,6 +284,11 @@ function Machine({
   dropTarget,
   onDragOver,
   onDrop,
+  canDrop = true,
+  activeTask,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
 }: {
   title: string
   state: string
@@ -258,6 +297,11 @@ function Machine({
   dropTarget: boolean
   onDragOver: () => void
   onDrop: () => void
+  canDrop?: boolean
+  activeTask?: QueueTask | null
+  draggable?: boolean
+  onDragStart?: () => void
+  onDragEnd?: () => void
 }) {
   const handleOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -266,18 +310,31 @@ function Machine({
   }
   return (
     <div
-      className={`machine ${tone} ${dropTarget ? 'machine-drop-target' : ''}`}
-      onDragOver={handleOver}
-      onDragEnter={handleOver}
+      className={`machine ${tone} ${activeTask?.stage_status === 'IN_PROGRESS' ? 'machine-running' : ''} ${dropTarget ? 'machine-drop-target' : ''}`}
+      onDragOver={canDrop ? handleOver : undefined}
+      onDragEnter={canDrop ? handleOver : undefined}
       onDrop={(event) => {
         event.preventDefault()
-        onDrop()
+        if (canDrop) onDrop()
       }}
+      draggable={draggable}
+      onDragStart={(event) => {
+        if (!draggable) return
+        event.stopPropagation()
+        event.dataTransfer.effectAllowed = 'move'
+        onDragStart?.()
+      }}
+      onDragEnd={onDragEnd}
     >
       <MachineIcon tone={tone} />
       <strong>{title}</strong>
       <b>{state}</b>
-      {tag && <small>{tag}</small>}
+      {activeTask && (
+        <small>
+          {activeTask.customer} · #{activeTask.order_id}
+        </small>
+      )}
+      {tag && !activeTask && <small>{tag}</small>}
     </div>
   )
 }

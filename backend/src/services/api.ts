@@ -93,6 +93,7 @@ export function orderResource(order: any) {
         stage: s.stage,
         status: s.status,
         machine_id: s.machineId,
+        machine_name: s.machine?.name ?? null,
         planned_start_at: s.plannedStartAt?.toISOString() ?? null,
         planned_end_at: s.plannedEndAt?.toISOString() ?? null,
         actual_started_at: s.actualStartedAt?.toISOString() ?? null,

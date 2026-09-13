@@ -41,15 +41,109 @@ export type CreatedOrder = {
   batches: Array<{ batch_id: number; batch_no: number }>
 }
 
+export type QueueTask = {
+  order_id: number
+  batch_id: number | null
+  batch_stage_id: number | null
+  rank: number
+  action: string
+  customer: string
+  group: string
+  detail: string
+  due: string
+  status: string
+  stage_status?: string
+  priority: number
+  slack_minutes: number | null
+  machine_id: number | null
+  machine_name: string | null
+  machine_type?: 'WASHER' | 'DRYER'
+  button: string | null
+  alert_count: number
+  weight_kg: number | null
+  estimated_at: string
+  planned_start_at: string | null
+  planned_end_at: string | null
+  actual_started_at: string | null
+  actual_machine_finished_at: string | null
+}
+
+export type QueueResponse = {
+  now: string
+  count: number
+  tasks: QueueTask[]
+  machines: Array<{
+    machine_id: number
+    name: string
+    type: 'WASHER' | 'DRYER'
+    status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'MAINTENANCE'
+    capacity_kg: number
+    processing_minutes: number
+    active_task: QueueTask | null
+  }>
+}
+
+export type OrderDetails = {
+  order_id: number
+  customer: { name: string; phone: string }
+  service_type: ServiceType
+  status: string
+  total_weight_kg: number
+  pickup_at: string
+  estimated_at: string
+  priority: number
+  items: Array<{
+    order_item_id: number
+    item_type: string
+    quantity: number
+    weight_kg: number | null
+  }>
+  batches: Array<{
+    batch_id: number
+    batch_no: number
+    weight_kg: number
+    status: string
+    current_stage: string | null
+    batch_items: Array<{ order_item_id: number; weight_kg: number }>
+    stages: Array<{
+      batch_stage_id: number
+      stage: 'WASH' | 'DRY'
+      status: string
+      machine_id: number | null
+      machine_name: string | null
+      planned_end_at: string | null
+      actual_machine_finished_at: string | null
+    }>
+  }>
+}
+
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  })
-  const body = (await response.json()) as T & { error?: { message?: string } }
-  if (!response.ok) throw new Error(body.error?.message ?? 'Không thể kết nối máy chủ')
+  let response: Response
+  try {
+    response = await fetch(`${apiUrl}${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+    })
+  } catch {
+    throw new Error('Không thể kết nối máy chủ. Vui lòng thử lại.')
+  }
+  const body = (await response.json().catch(() => ({}))) as T & {
+    error?: { code?: string; message?: string }
+  }
+  if (!response.ok) {
+    const messages: Record<string, string> = {
+      MACHINE_UNAVAILABLE: 'Máy không phù hợp hoặc đang được sử dụng',
+      INVALID_STATE: 'Tác vụ chưa sẵn sàng để thực hiện',
+      STAGE_LOCKED: 'Tác vụ đang chạy và không thể thay đổi',
+      NOTIFICATION_FAILED: 'Không gửi được thông báo cho khách',
+      NOT_FOUND: 'Không tìm thấy dữ liệu tác vụ',
+    }
+    throw new Error(
+      messages[body.error?.code ?? ''] ?? 'Không thể cập nhật dữ liệu. Vui lòng thử lại.',
+    )
+  }
   return body
 }
 
@@ -61,5 +155,50 @@ export function createOrder(planId: string) {
   return request<CreatedOrder>('/orders', {
     method: 'POST',
     body: JSON.stringify({ plan_id: planId }),
+  })
+}
+
+export function getQueue() {
+  return request<QueueResponse>('/queue', { method: 'GET' })
+}
+
+export function getOrder(orderId: number) {
+  return request<OrderDetails>(`/orders/${orderId}`, { method: 'GET' })
+}
+
+export function updateStage(
+  task: { batchId?: number | null; batchStageId?: number | null },
+  action: 'start' | 'machine-finished' | 'unload',
+  machineId?: number,
+) {
+  return request(`/batches/${task.batchId}/stages/${task.batchStageId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify(machineId === undefined ? {} : { machine_id: machineId }),
+  })
+}
+
+export function confirmClassification(orderId: number) {
+  return request(`/orders/${orderId}/classification`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+export function completePacking(orderId: number) {
+  return request(`/orders/${orderId}/packing`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+export function draftReadyNotification(orderId: number) {
+  return request<{ type: string; channel: string; content: string }>(
+    `/orders/${orderId}/notifications/draft`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+}
+
+export function sendReadyNotification(orderId: number, content: string) {
+  return request(`/orders/${orderId}/notifications`, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'READY_FOR_PICKUP',
+      channel: 'SMS',
+      content,
+    }),
   })
 }

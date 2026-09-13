@@ -10,6 +10,7 @@ import orders from './routes/orders.js'
 import batches from './routes/batches.js'
 import machines from './routes/machines.js'
 import alerts from './routes/alerts.js'
+import queue from './routes/queue.js'
 
 const app = express()
 app.use(cors())
@@ -19,6 +20,7 @@ app.use('/api/orders', orders)
 app.use('/api/batches', batches)
 app.use('/api/machines', machines)
 app.use('/api/alerts', alerts)
+app.use('/api/queue', queue)
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof ApiError)
     return res.status(err.status).json({

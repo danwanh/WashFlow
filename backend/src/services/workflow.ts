@@ -1,5 +1,7 @@
 import { fail, getOrder, orderInclude, prisma } from './api.js'
 
+const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
+
 export async function updateStage(
   batchId: number,
   stageId: number,
@@ -68,9 +70,11 @@ export async function updateStage(
   } else {
     if (current.status !== 'MACHINE_FINISHED' || !current.machineId)
       fail(400, 'INVALID_STATE', 'Stage is not waiting for unload')
-    const next = batch.stages.find(
-      (stage) => stage.status === 'PLANNED' && stage.batchStageId !== stageId,
-    )
+    const next = [...batch.stages]
+      .sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage))
+      .find(
+        (stage) => stage.status === 'PLANNED' && stage.batchStageId !== stageId,
+      )
     await prisma.$transaction([
       prisma.batchStage.update({
         where: { batchStageId: stageId },
@@ -89,6 +93,15 @@ export async function updateStage(
         },
       }),
     ])
+    const updatedBatches = await prisma.orderBatch.findMany({
+      where: { orderId: batch.orderId },
+    })
+    if (updatedBatches.every((item) => item.status === 'COMPLETED')) {
+      await prisma.laundryOrder.update({
+        where: { orderId: batch.orderId },
+        data: { status: 'FOLDING_PACKING' },
+      })
+    }
   }
   return getOrder(batch.orderId)
 }
@@ -98,6 +111,8 @@ export async function completePacking(orderId: number) {
   if (!order) fail(404, 'NOT_FOUND', 'Order not found')
   if (order.batches.some((batch) => batch.status !== 'COMPLETED'))
     fail(400, 'INVALID_STATE', 'All batches must be machine-complete')
+  if (order.status !== 'FOLDING_PACKING')
+    fail(400, 'INVALID_STATE', 'Order is not waiting for packing')
   const now = new Date()
   return prisma.laundryOrder.update({
     where: { orderId },

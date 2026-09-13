@@ -25,8 +25,15 @@ export async function plan(req: Request, res: Response) {
   )
     fail(400, 'INVALID_INPUT', 'Customer and at least one item are required')
   if (typeof b.customer.name !== 'string' || b.customer.name.trim().length < 2)
-    fail(400, 'INVALID_INPUT', 'Customer name must contain at least 2 characters')
-  if (typeof b.customer.phone !== 'string' || !/^\+?[0-9 ()-]{8,20}$/.test(b.customer.phone))
+    fail(
+      400,
+      'INVALID_INPUT',
+      'Customer name must contain at least 2 characters',
+    )
+  if (
+    typeof b.customer.phone !== 'string' ||
+    !/^\+?[0-9 ()-]{8,20}$/.test(b.customer.phone)
+  )
     fail(400, 'INVALID_INPUT', 'Invalid customer phone')
   if (!['WASH', 'DRY', 'WASH_DRY'].includes(b.service_type))
     fail(400, 'INVALID_INPUT', 'Invalid service_type')
@@ -52,7 +59,9 @@ export async function plan(req: Request, res: Response) {
     where: { status: { in: ['AVAILABLE', 'BUSY'] } },
     include: {
       stages: {
-        where: { status: { in: ['PLANNED', 'IN_PROGRESS', 'MACHINE_FINISHED'] } },
+        where: {
+          status: { in: ['PLANNED', 'IN_PROGRESS', 'MACHINE_FINISHED'] },
+        },
         select: {
           plannedEndAt: true,
           actualMachineFinishedAt: true,
@@ -74,7 +83,9 @@ export async function plan(req: Request, res: Response) {
       status: m.status,
       availableAt: m.stages.reduce((availableAt, stage) => {
         const stageAvailableAt = stage.actualEndedAt ?? stage.plannedEndAt
-        return stageAvailableAt && stageAvailableAt > availableAt ? stageAvailableAt : availableAt
+        return stageAvailableAt && stageAvailableAt > availableAt
+          ? stageAvailableAt
+          : availableAt
       }, new Date()),
     })),
   })
@@ -268,9 +279,17 @@ export async function classification(req: Request, res: Response) {
   const orderId = getId(req.params.orderId)
   const order = await getOrder(orderId)
   if (!order) fail(404, 'NOT_FOUND', 'Order not found')
-  const batches = getBody(req).batches
-  if (!Array.isArray(batches))
-    fail(400, 'INVALID_INPUT', 'batches must be an array')
+  if (order.status !== 'RECEIVED')
+    fail(400, 'INVALID_STATE', 'Order is not waiting for classification')
+  const batches = Array.isArray(getBody(req).batches)
+    ? getBody(req).batches
+    : order.batches.map((batch) => ({
+        batch_id: batch.batchId,
+        items: batch.items.map((item) => ({
+          order_item_id: item.orderItemId,
+          weight_kg: Number(item.weightKg),
+        })),
+      }))
   for (const p of batches) {
     const batch = order.batches.find((x) => x.batchId === p.batch_id)
     if (!batch) fail(404, 'NOT_FOUND', 'Batch not found')

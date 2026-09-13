@@ -25,7 +25,146 @@ async function machine(input: {
   return prisma.machine.create({ data: input })
 }
 
+async function resetDatabase() {
+  await prisma.$transaction([
+    prisma.alert.deleteMany(),
+    prisma.notification.deleteMany(),
+    prisma.appointmentHistory.deleteMany(),
+    prisma.batchStage.deleteMany(),
+    prisma.batchItem.deleteMany(),
+    prisma.orderBatch.deleteMany(),
+    prisma.orderItem.deleteMany(),
+    prisma.laundryOrder.deleteMany(),
+    prisma.customer.deleteMany(),
+    prisma.machine.deleteMany(),
+  ])
+}
+
+type SeedOrderStatus = 'RECEIVED' | 'WAITING' | 'FOLDING_PACKING' | 'READY' | 'COMPLETED'
+
+async function seedOrders(
+  status: SeedOrderStatus,
+  count: number,
+  now: Date,
+  washerIds: number[],
+  dryerIds: number[],
+) {
+  const names = [
+    'Trần Minh Anh',
+    'Lê Hoàng Nam',
+    'Phạm Thu Hà',
+    'Đỗ Gia Bảo',
+    'Vũ Ngọc Lan',
+  ]
+  const itemTypes = ['shirt', 'trousers', 'blanket', 'towel', 'dress']
+
+  for (let index = 0; index < count; index += 1) {
+    const customer = await prisma.customer.create({
+      data: {
+        name: names[index % names.length]!,
+        phone: `09100000${String(status.length * 10 + index).padStart(2, '0')}`,
+      },
+    })
+    const createdAt = new Date(now.getTime() - (index + 1) * 60 * 60 * 1000)
+    const isCompleted = status === 'COMPLETED'
+    const isReady = status === 'READY'
+    const isPacking = status === 'FOLDING_PACKING'
+    const isProcessed = isCompleted || isReady || isPacking
+    const itemType = itemTypes[index % itemTypes.length]!
+    const weightKg = 1.5 + index * 0.5
+    const serviceType = index % 2 === 0 ? 'WASH_DRY' : 'WASH'
+    const isHistorical = isProcessed
+    const scheduleOffsetHours = status === 'RECEIVED' ? 1 : status === 'WAITING' ? 4 : 0
+    const washStart = isHistorical
+      ? new Date(createdAt.getTime() + 15 * 60 * 1000)
+      : new Date(now.getTime() + (index + scheduleOffsetHours) * 60 * 60 * 1000)
+    const washEnd = new Date(washStart.getTime() + 45 * 60 * 1000)
+    const dryStart = new Date(washEnd.getTime() + 10 * 60 * 1000)
+    const dryEnd = new Date(dryStart.getTime() + 50 * 60 * 1000)
+
+    const order = await prisma.laundryOrder.create({
+      data: {
+        customerId: customer.customerId,
+        serviceType,
+        status,
+        totalWeightKg: new Prisma.Decimal(weightKg),
+        pickupAt: new Date(now.getTime() + (index + 2) * 60 * 60 * 1000),
+        estimatedAt: isProcessed
+          ? new Date(now.getTime() - 30 * 60 * 1000)
+          : new Date(now.getTime() + 90 * 60 * 1000),
+        priority: index % 2,
+        specialNote: `SEED_STATUS_${status}_${index + 1}`,
+        ...(status !== 'RECEIVED' ? { classifiedAt: new Date(createdAt.getTime() + 10 * 60 * 1000) } : {}),
+        ...(isPacking || isReady || isCompleted
+          ? { packingCompletedAt: new Date(now.getTime() - 20 * 60 * 1000) }
+          : {}),
+        ...(isReady || isCompleted ? { readyAt: new Date(now.getTime() - 15 * 60 * 1000) } : {}),
+        ...(isCompleted ? { completedAt: new Date(now.getTime() - 5 * 60 * 1000) } : {}),
+      },
+    })
+    const item = await prisma.orderItem.create({
+      data: {
+        orderId: order.orderId,
+        itemType,
+        quantity: 2 + index,
+        weightKg: new Prisma.Decimal(weightKg),
+      },
+    })
+    const batch = await prisma.orderBatch.create({
+      data: {
+        orderId: order.orderId,
+        batchNo: 1,
+        weightKg: new Prisma.Decimal(weightKg),
+        status: isProcessed ? 'COMPLETED' : 'WAITING',
+        currentStage: isProcessed ? null : 'WASH',
+        ...(isProcessed ? { completedAt: new Date(now.getTime() - 25 * 60 * 1000) } : {}),
+      },
+    })
+    await prisma.batchItem.create({
+      data: { batchId: batch.batchId, orderItemId: item.orderItemId, weightKg: new Prisma.Decimal(weightKg) },
+    })
+    await prisma.batchStage.create({
+      data: {
+        batchId: batch.batchId,
+        machineId: washerIds[index % washerIds.length],
+        stage: 'WASH',
+        status: isProcessed ? 'COMPLETED' : 'PLANNED',
+        plannedStartAt: washStart,
+        plannedEndAt: washEnd,
+        ...(isProcessed
+          ? {
+              actualStartedAt: washStart,
+              actualMachineFinishedAt: washEnd,
+              actualEndedAt: new Date(washEnd.getTime() + 5 * 60 * 1000),
+            }
+          : {}),
+      },
+    })
+    if (serviceType === 'WASH_DRY') {
+      await prisma.batchStage.create({
+        data: {
+          batchId: batch.batchId,
+          machineId: dryerIds[index % dryerIds.length],
+          stage: 'DRY',
+          status: isProcessed ? 'COMPLETED' : 'PLANNED',
+          plannedStartAt: dryStart,
+          plannedEndAt: dryEnd,
+          ...(isProcessed
+            ? {
+                actualStartedAt: dryStart,
+                actualMachineFinishedAt: dryEnd,
+                actualEndedAt: new Date(dryEnd.getTime() + 5 * 60 * 1000),
+              }
+            : {}),
+        },
+      })
+    }
+  }
+}
+
 async function main() {
+  await resetDatabase()
+
   const washer = await machine({
     name: 'Máy giặt 01',
     type: 'WASHER',
@@ -39,6 +178,48 @@ async function main() {
     status: 'AVAILABLE',
     capacityKg: 8,
     processingMinutes: 50,
+  })
+  const washer2 = await machine({
+    name: 'Máy giặt 02',
+    type: 'WASHER',
+    status: 'AVAILABLE',
+    capacityKg: 10,
+    processingMinutes: 50,
+  })
+  const washer3 = await machine({
+    name: 'Máy giặt 03',
+    type: 'WASHER',
+    status: 'AVAILABLE',
+    capacityKg: 12,
+    processingMinutes: 55,
+  })
+  const washer4 = await machine({
+    name: 'Máy giặt 04',
+    type: 'WASHER',
+    status: 'AVAILABLE',
+    capacityKg: 8,
+    processingMinutes: 40,
+  })
+  const dryer2 = await machine({
+    name: 'Máy sấy 02',
+    type: 'DRYER',
+    status: 'AVAILABLE',
+    capacityKg: 10,
+    processingMinutes: 55,
+  })
+  const dryer3 = await machine({
+    name: 'Máy sấy 03',
+    type: 'DRYER',
+    status: 'AVAILABLE',
+    capacityKg: 12,
+    processingMinutes: 60,
+  })
+  const dryer4 = await machine({
+    name: 'Máy sấy 04',
+    type: 'DRYER',
+    status: 'AVAILABLE',
+    capacityKg: 8,
+    processingMinutes: 45,
   })
 
   const customer = await prisma.customer.upsert({
@@ -59,7 +240,8 @@ async function main() {
       data: {
         customerId: customer.customerId,
         serviceType: 'WASH_DRY',
-        status: 'WAITING',
+         status: 'WAITING',
+         classifiedAt: new Date(now.getTime() - 5 * 60 * 1000),
         totalWeightKg: new Prisma.Decimal(2.5),
         pickupAt: new Date(now.getTime() + 4 * 60 * 60 * 1000),
         estimatedAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
@@ -113,11 +295,11 @@ async function main() {
         },
       ],
     })
-    await prisma.machine.update({
-      where: { machineId: washer.machineId },
-      data: { status: 'BUSY' },
-    })
   }
+  await prisma.machine.update({
+    where: { machineId: washer.machineId },
+    data: { status: 'BUSY' },
+  })
 
   const existingReady = await prisma.laundryOrder.findFirst({
     where: { customerId: customer.customerId, specialNote: 'SEED_READY_ORDER' },
@@ -128,7 +310,8 @@ async function main() {
       data: {
         customerId: customer.customerId,
         serviceType: 'WASH',
-        status: 'READY',
+         status: 'READY',
+         classifiedAt: new Date(now.getTime() - 120 * 60 * 1000),
         totalWeightKg: new Prisma.Decimal(3),
         pickupAt: new Date(now.getTime() + 90 * 60 * 1000),
         estimatedAt: new Date(now.getTime() - 10 * 60 * 1000),
@@ -194,6 +377,15 @@ async function main() {
       },
     })
   }
+
+  const now = new Date()
+  const washerIds = [washer.machineId, washer2.machineId, washer3.machineId, washer4.machineId]
+  const dryerIds = [dryer.machineId, dryer2.machineId, dryer3.machineId, dryer4.machineId]
+  await seedOrders('RECEIVED', 3, now, washerIds, dryerIds)
+  await seedOrders('WAITING', 3, now, washerIds, dryerIds)
+  await seedOrders('FOLDING_PACKING', 3, now, washerIds, dryerIds)
+  await seedOrders('READY', 3, now, washerIds, dryerIds)
+  await seedOrders('COMPLETED', 3, now, washerIds, dryerIds)
 }
 
 main()
