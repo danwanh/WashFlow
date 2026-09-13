@@ -1,4 +1,9 @@
 import { fail, getOrder, orderInclude, prisma } from './api.js'
+import {
+  recordMachineFinishedAlert,
+  resolveMachineFinishedAlert,
+} from './alerts.js'
+import { rescheduleAll } from './rescheduler.js'
 
 const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
 
@@ -67,6 +72,7 @@ export async function updateStage(
         data: { status: 'WAITING_FOR_UNLOAD' },
       }),
     ])
+    await recordMachineFinishedAlert(batch.orderId, batch.batchId, now)
   } else {
     if (current.status !== 'MACHINE_FINISHED' || !current.machineId)
       fail(400, 'INVALID_STATE', 'Stage is not waiting for unload')
@@ -93,6 +99,7 @@ export async function updateStage(
         },
       }),
     ])
+    await resolveMachineFinishedAlert(batch.orderId, batch.batchId, now)
     const updatedBatches = await prisma.orderBatch.findMany({
       where: { orderId: batch.orderId },
     })
@@ -103,6 +110,7 @@ export async function updateStage(
       })
     }
   }
+  if (action === 'unload') await rescheduleAll('STAGE_UNLOADED')
   return getOrder(batch.orderId)
 }
 

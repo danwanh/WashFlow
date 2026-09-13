@@ -13,6 +13,8 @@ import {
 import { useEffect, useState } from 'react'
 import {
   createOrder,
+  changePickupTime,
+  previewPickupTime,
   draftReadyNotification,
   getOrder,
   previewOrder,
@@ -33,6 +35,11 @@ const serviceLabel: Record<string, string> = {
   WASH: 'Giặt',
   DRY: 'Sấy',
   WASH_DRY: 'Giặt và sấy',
+}
+const todayInputValue = () => {
+  const date = new Date()
+  const pad = (number: number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 export function ModalFrame({
@@ -72,13 +79,22 @@ export function DetailModal({
   task,
   onClose,
   onAction,
+  onPickupChanged,
 }: {
   task: Task
   onClose: () => void
   onAction?: () => void
+  onPickupChanged?: () => void
 }) {
   const [order, setOrder] = useState<Awaited<ReturnType<typeof getOrder>> | null>(null)
   const [error, setError] = useState('')
+  const [editingPickup, setEditingPickup] = useState(false)
+  const [newPickupAt, setNewPickupAt] = useState('')
+  const [savingPickup, setSavingPickup] = useState(false)
+  const [pickupPreview, setPickupPreview] = useState<Awaited<
+    ReturnType<typeof previewPickupTime>
+  > | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   useEffect(() => {
     if (!task.orderId) return
     void getOrder(task.orderId)
@@ -89,6 +105,63 @@ export function DetailModal({
   }, [task.orderId])
   const formatTime = (value: string) =>
     new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+  const localDateTime = (value: string) => {
+    const date = new Date(value)
+    const pad = (number: number) => String(number).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+  const savePickupTime = async () => {
+    if (!task.orderId || !newPickupAt || !pickupPreview?.feasible) return
+    setSavingPickup(true)
+    setError('')
+    try {
+      const response = await changePickupTime(task.orderId, new Date(newPickupAt).toISOString())
+      setOrder(response.order)
+      setEditingPickup(false)
+      onPickupChanged?.()
+    } catch (cause) {
+      const requestError = cause as Error & { details?: { earliest_feasible_pickup?: string } }
+      const earliest = requestError.details?.earliest_feasible_pickup
+      setError(
+        earliest
+          ? `${requestError.message}. Giờ sớm nhất có thể: ${formatTime(earliest)}.`
+          : requestError.message,
+      )
+    } finally {
+      setSavingPickup(false)
+    }
+  }
+  useEffect(() => {
+    if (!editingPickup || !task.orderId || !newPickupAt || !order) return
+    if (new Date(newPickupAt).getTime() === new Date(order.pickup_at).getTime()) return
+    const timer = window.setTimeout(() => {
+      setPreviewLoading(true)
+      setPickupPreview(null)
+      setError('')
+      void previewPickupTime(task.orderId!, new Date(newPickupAt).toISOString())
+        .then((preview) => {
+          setPickupPreview(preview)
+          if (!preview.feasible) {
+            const lateOrders = preview.affected_orders.filter((affected) => affected.late)
+            const lateSummary = lateOrders.length
+              ? ` Đơn gây xung đột: ${lateOrders.map((affected) => `#${affected.order_id} (hẹn ${formatTime(affected.pickup_at ?? '')}, ETA ${formatTime(affected.estimated_at)})`).join(', ')}.`
+              : ''
+            setError(
+              preview.unscheduled_stage_ids.length
+                ? 'Không thể đổi giờ vì chưa có máy phù hợp cho một số công đoạn.'
+                : preview.earliest_feasible_pickup
+                  ? `Giờ hẹn mới không khả thi. ETA sớm nhất: ${formatTime(preview.earliest_feasible_pickup)}.${lateSummary}`
+                  : `Giờ hẹn mới không khả thi với lịch xử lý hiện tại.${lateSummary}`,
+            )
+          }
+        })
+        .catch((cause) =>
+          setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra lịch'),
+        )
+        .finally(() => setPreviewLoading(false))
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [editingPickup, newPickupAt, order, task.orderId])
   const stepFor = (batch: NonNullable<typeof order>['batches'][number]) => {
     if (order?.status === 'RECEIVED') return 1
     if (order?.status === 'FOLDING_PACKING') return 4
@@ -129,7 +202,7 @@ export function DetailModal({
       className="compact-detail-modal"
     >
       <div className="compact-detail-body">
-        <div className="compact-summary">
+        <div className={`compact-summary ${editingPickup ? 'editing' : ''}`}>
           <div>
             <small>{statusText.toUpperCase()}</small>
             <b>{order ? `${order.batches.length} mẻ xử lý độc lập` : 'Đang tải chi tiết...'}</b>
@@ -141,12 +214,87 @@ export function DetailModal({
           </div>
           <div className="compact-deadline">
             <small>HẠN GIAO</small>
-            <strong>{order ? formatTime(order.pickup_at) : task.due}</strong>
             <span>
               {order && new Date(order.estimated_at) > new Date(order.pickup_at)
                 ? 'Có nguy cơ trễ'
                 : 'Đúng hẹn'}
             </span>
+            {editingPickup ? (
+              <div className="pickup-editor">
+                <input
+                  className="pickup-edit-input"
+                  type="datetime-local"
+                  value={newPickupAt}
+                  onChange={(event) => setNewPickupAt(event.target.value)}
+                />
+                <div className="pickup-edit-actions">
+                  <button
+                    className="pickup-save-button"
+                    disabled={savingPickup || previewLoading || !pickupPreview?.feasible}
+                    onClick={() => void savePickupTime()}
+                  >
+                    {savingPickup ? 'Đang kiểm tra...' : 'Lưu giờ mới'}
+                  </button>
+                  <button
+                    className="pickup-cancel-button"
+                    disabled={savingPickup}
+                    onClick={() => {
+                      setEditingPickup(false)
+                      setError('')
+                    }}
+                  >
+                    Hủy
+                  </button>
+                </div>
+                {previewLoading && (
+                  <small className="pickup-preview-status">
+                    Đang kiểm tra các đơn bị ảnh hưởng...
+                  </small>
+                )}
+                {pickupPreview && (
+                  <div className="pickup-affected-orders">
+                    <b>Đơn bị ảnh hưởng</b>
+                    {pickupPreview.affected_orders.length ? (
+                      pickupPreview.affected_orders.map((affected) => (
+                        <div key={affected.order_id}>
+                          <span>
+                            #{affected.order_id} · {affected.customer}
+                          </span>
+                          <small
+                            className={affected.late && !affected.preexisting_late ? 'late' : ''}
+                          >
+                            Hẹn {affected.pickup_at ? formatTime(affected.pickup_at) : '--:--'} ·
+                            ETA {formatTime(affected.estimated_at)} ·{' '}
+                            {affected.preexisting_late
+                              ? 'Đã trễ trước khi đổi giờ'
+                              : affected.late
+                                ? 'Có nguy cơ trễ'
+                                : 'Đúng hẹn'}
+                          </small>
+                        </div>
+                      ))
+                    ) : (
+                      <small>Không có đơn khác bị ảnh hưởng.</small>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <strong>{order ? formatTime(order.pickup_at) : task.due}</strong>
+            )}
+            {!editingPickup && order && order.status !== 'COMPLETED' && (
+              <button
+                className="table-action pickup-edit-button"
+                onClick={() => {
+                  setNewPickupAt(localDateTime(order.pickup_at))
+                  setPickupPreview(null)
+                  setError('')
+                  setEditingPickup(true)
+                }}
+              >
+                <Clock3 size={13} /> Đổi giờ hẹn
+              </button>
+            )}
           </div>
         </div>
         {error && <p className="queue-error">{error}</p>}
@@ -425,6 +573,11 @@ export function CreateOrderModal({
   const [customer, setCustomer] = useState('')
   const [phone, setPhone] = useState('')
   const [service, setService] = useState<ServiceType>('WASH_DRY')
+  const [pickupDate, setPickupDate] = useState(() => {
+    const today = new Date()
+    const pad = (value: number) => String(value).padStart(2, '0')
+    return `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+  })
   const [pickupAt, setPickupAt] = useState('16:00')
   const [note, setNote] = useState('')
   const [items, setItems] = useState<Item[]>([
@@ -444,7 +597,7 @@ export function CreateOrderModal({
   const noFeasibleMachine = plan?.warnings.includes('NO_FEASIBLE_MACHINE')
   const pickupTimestamp = () => {
     const [hours, minutes] = pickupAt.split(':').map(Number)
-    const date = new Date()
+    const date = new Date(`${pickupDate}T00:00:00`)
     date.setHours(hours ?? 0, minutes ?? 0, 0, 0)
     return date.toISOString()
   }
@@ -555,6 +708,16 @@ export function CreateOrderModal({
                   <option value="DRY">Sấy</option>
                   <option value="WASH_DRY">Giặt + Sấy</option>
                 </select>
+              </label>
+              <label>
+                Ngày nhận đồ *
+                <input
+                  className="date-input"
+                  type="date"
+                  min={todayInputValue()}
+                  value={pickupDate}
+                  onChange={(e) => setPickupDate(e.target.value)}
+                />
               </label>
               <label>
                 Giờ hẹn nhận đồ *

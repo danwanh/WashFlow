@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { MachinePane, OrderSummary, TaskCard, Upcoming } from '../components/queue/QueueComponents'
+import { useEffect, useRef, useState } from 'react'
+import { MachinePane, TaskCard } from '../components/queue/QueueComponents'
 import { ConfirmActionModal, NotificationModal } from '../components/modals/ModalComponents'
 import {
   completePacking,
@@ -33,6 +33,9 @@ export function QueuePage({
   const [confirming, setConfirming] = useState<Task | null>(null)
   const [notifying, setNotifying] = useState<Task | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [machineWidth, setMachineWidth] = useState(20)
+  const [resizing, setResizing] = useState(false)
+  const resizeHandle = useRef<HTMLDivElement>(null)
   const load = () =>
     getQueue()
       .then((result) => {
@@ -43,6 +46,8 @@ export function QueuePage({
       .catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tải hàng đợi'))
   useEffect(() => {
     void load()
+    const timer = window.setInterval(() => void load(), 5_000)
+    return () => window.clearInterval(timer)
   }, [refreshToken])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -52,12 +57,17 @@ export function QueuePage({
     id: String(task.order_id),
     rank: task.rank,
     action: task.action,
+    actionType: task.action_type,
     customer: task.customer,
     group: task.group,
     detail: task.detail,
     due: new Date(task.due).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     tone:
-      task.stage_status === 'MACHINE_FINISHED'
+      task.action_type === 'NOTIFY'
+        ? 'green'
+        : task.action_type === 'PACK'
+          ? 'amber'
+          : task.stage_status === 'MACHINE_FINISHED'
         ? 'amber'
         : task.stage_status === 'IN_PROGRESS'
           ? 'blue'
@@ -123,9 +133,22 @@ export function QueuePage({
       (dragging.weightKg ?? Number.POSITIVE_INFINITY) <= machine.capacity_kg,
     )
   }
+  const updateMachineWidth = (clientX: number) => {
+    const workspace = resizeHandle.current?.parentElement
+    if (!workspace) return
+    const bounds = workspace.getBoundingClientRect()
+    const nextWidth = ((bounds.right - clientX) / bounds.width) * 100
+    setMachineWidth(Math.min(42, Math.max(18, nextWidth)))
+  }
   return (
     <>
-      <section className="queue-pane">
+      <section
+        className="queue-pane"
+        style={{
+          width: `calc(100% - ${machineWidth}% - 8px)`,
+          flexBasis: `calc(100% - ${machineWidth}% - 8px)`,
+        }}
+      >
         <div className="queue-header">
           <div>
             <div className="title-row">
@@ -156,21 +179,6 @@ export function QueuePage({
             </div>
           </div>
         </div>
-        {dragging?.stageStatus === 'MACHINE_FINISHED' && (
-          <div
-            className="unload-drop-zone"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault()
-              const task = dragging
-              setDragging(null)
-              setTarget(null)
-              requestComplete(task)
-            }}
-          >
-            Kéo mẻ vào đây để xác nhận đã lấy đồ khỏi máy
-          </div>
-        )}
         <div className="task-list">
           {visible.map((task) => (
             <TaskCard
@@ -183,6 +191,18 @@ export function QueuePage({
               onDragEnd={() => {
                 setDragging(null)
                 setTarget(null)
+              }}
+              canAcceptUnload={Boolean(
+                dragging?.stageStatus === 'MACHINE_FINISHED' &&
+                  dragging.orderId === task.orderId &&
+                  dragging.batchStageId === task.batchStageId,
+              )}
+              onUnloadDrop={() => {
+                if (!dragging) return
+                const unloadTask = dragging
+                setDragging(null)
+                setTarget(null)
+                requestComplete(unloadTask)
               }}
               onReschedule={async () => {
                 if (task.batchId && task.batchStageId && task.stageStatus === 'PLANNED') {
@@ -199,18 +219,37 @@ export function QueuePage({
           ))}
         </div>
         {error && <p className="queue-error">{error}</p>}
-        <OrderSummary />
-        <div className="upcoming">
-          <div>
-            <b>SẮP TỚI</b>
-            <span>(Chưa vào hàng đợi ưu tiên · Bấm để xem chi tiết)</span>
-          </div>
-          <Upcoming time="17:55" id="#140 · Nguyễn An" />
-          <Upcoming time="18:10" id="#145 · Trần Mai" />
-        </div>
+        {queue && visible.length === 0 && (
+          <div className="queue-empty">Không có công việc phù hợp với bộ lọc.</div>
+        )}
       </section>
+      <div
+        ref={resizeHandle}
+        className={`workspace-resize-handle ${resizing ? 'resizing' : ''}`}
+        role="separator"
+        aria-label="Điều chỉnh độ rộng khu vực máy"
+        aria-orientation="vertical"
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.preventDefault()
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setResizing(true)
+        }}
+        onPointerMove={(event) => {
+          if (resizing) updateMachineWidth(event.clientX)
+        }}
+        onPointerUp={(event) => {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+          setResizing(false)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') setMachineWidth((value) => Math.min(42, value + 2))
+          if (event.key === 'ArrowRight') setMachineWidth((value) => Math.max(18, value - 2))
+        }}
+      />
       <MachinePane
         machines={queue?.machines ?? []}
+        widthPercent={machineWidth}
         now={now}
         dropTarget={target}
         onDragOver={(machine) => {

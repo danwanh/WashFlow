@@ -14,6 +14,7 @@ import {
   orderResource,
 } from '../services/api.js'
 import crypto from 'node:crypto'
+import { rescheduleAll, rescheduleWithClient } from '../services/rescheduler.js'
 
 export async function plan(req: Request, res: Response) {
   const b = getBody(req)
@@ -183,7 +184,8 @@ export async function create(req: Request, res: Response) {
     })
   })
   planStore.delete(planId)
-  res.status(201).json(orderResource(created))
+  await rescheduleAll('NEW_ORDER')
+  res.status(201).json(orderResource(await getOrder(created.orderId)))
 }
 export async function list(req: Request, res: Response) {
   const q = req.query
@@ -236,14 +238,154 @@ export async function pickupChange(req: Request, res: Response) {
   const order = await getOrder(orderId)
   if (!order) fail(404, 'NOT_FOUND', 'Order not found')
   const newPickupAt = getDate(getBody(req).new_pickup_at, 'new_pickup_at')
-  if (newPickupAt < order.estimatedAt)
-    fail(
-      422,
-      'PICKUP_UNFEASIBLE',
-      'No valid schedule meets the requested pickup time',
-      { earliest_feasible_pickup: order.estimatedAt },
+  if (newPickupAt.getTime() === order.pickupAt.getTime())
+    fail(400, 'INVALID_INPUT', 'New pickup time must be different')
+  const baselineOrders = await prisma.laundryOrder.findMany({
+    where: { status: { not: 'COMPLETED' } },
+    select: {
+      orderId: true,
+      pickupAt: true,
+      estimatedAt: true,
+      customer: { select: { name: true } },
+    },
+  })
+  if (getBody(req).preview === true) {
+    class PreviewRollback extends Error {
+      constructor(public readonly value: unknown) {
+        super('PICKUP_PREVIEW')
+      }
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.laundryOrder.update({
+          where: { orderId },
+          data: { pickupAt: newPickupAt },
+        })
+        const schedule = await rescheduleWithClient(tx, 'PICKUP_TIME_CHANGED')
+        const lateOrders = schedule.affectedOrders.filter(
+          (entry: { orderId: number; late: boolean }) => {
+            if (!entry.late) return false
+            if (entry.orderId === orderId) return true
+            const baseline = baselineOrders.find(
+              (item) => item.orderId === entry.orderId,
+            )
+            return baseline
+              ? Math.max(baseline.estimatedAt.getTime(), Date.now()) <=
+                  baseline.pickupAt.getTime()
+              : true
+          },
+        )
+        const affectedOrders = schedule.affectedOrders
+          .filter(
+            (entry: { orderId: number }) =>
+              entry.orderId === orderId ||
+              schedule.changedOrderIds.includes(entry.orderId),
+          )
+          .filter((entry: { orderId: number }) => {
+            const baseline = baselineOrders.find(
+              (item) => item.orderId === entry.orderId,
+            )
+            return (
+              !baseline ||
+              Math.max(baseline.estimatedAt.getTime(), Date.now()) <=
+                baseline.pickupAt.getTime()
+            )
+          })
+          .map(
+            (entry: {
+              orderId: number
+              estimatedAt: string
+              late: boolean
+            }) => {
+              const baseline = baselineOrders.find(
+                (item) => item.orderId === entry.orderId,
+              )
+              const preexistingLate = baseline
+                ? Math.max(baseline.estimatedAt.getTime(), Date.now()) >
+                  baseline.pickupAt.getTime()
+                : false
+              return {
+                order_id: entry.orderId,
+                customer: baseline?.customer.name ?? 'Không rõ khách hàng',
+                pickup_at:
+                  entry.orderId === orderId
+                    ? newPickupAt.toISOString()
+                    : (baseline?.pickupAt.toISOString() ?? null),
+                estimated_at: entry.estimatedAt,
+                late: entry.late,
+                preexisting_late: preexistingLate,
+              }
+            },
+          )
+        throw new PreviewRollback({
+          feasible: !schedule.unscheduledStageIds.length && !lateOrders.length,
+          affected_orders: affectedOrders,
+          unscheduled_stage_ids: schedule.unscheduledStageIds,
+          earliest_feasible_pickup: lateOrders.length
+            ? lateOrders
+                .map((entry: { estimatedAt: string }) =>
+                  new Date(entry.estimatedAt).getTime(),
+                )
+                .reduce(
+                  (latest: number, value: number) => Math.max(latest, value),
+                  order.estimatedAt.getTime(),
+                )
+                .toString()
+            : null,
+        })
+      })
+    } catch (cause) {
+      if (cause instanceof PreviewRollback) {
+        const value = cause.value as { earliest_feasible_pickup: string | null }
+        return res.json({
+          ...(cause.value as object),
+          earliest_feasible_pickup: value.earliest_feasible_pickup
+            ? new Date(Number(value.earliest_feasible_pickup)).toISOString()
+            : null,
+        })
+      }
+      throw cause
+    }
+  }
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.laundryOrder.update({
+      where: { orderId },
+      data: { pickupAt: newPickupAt },
+    })
+    const schedule = await rescheduleWithClient(tx, 'PICKUP_TIME_CHANGED')
+    const lateOrders = schedule.affectedOrders.filter(
+      (entry: { orderId: number; late: boolean }) => {
+        if (!entry.late) return false
+        if (entry.orderId === orderId) return true
+        const baseline = baselineOrders.find(
+          (item) => item.orderId === entry.orderId,
+        )
+        return baseline
+          ? Math.max(baseline.estimatedAt.getTime(), Date.now()) <=
+              baseline.pickupAt.getTime()
+          : true
+      },
     )
-  const updated = await prisma.$transaction(async (tx) => {
+    if (schedule.unscheduledStageIds.length || lateOrders.length) {
+      const earliest = lateOrders
+        .map((entry: { estimatedAt: string }) =>
+          new Date(entry.estimatedAt).getTime(),
+        )
+        .reduce(
+          (latest: number, value: number) => Math.max(latest, value),
+          order.estimatedAt.getTime(),
+        )
+      fail(
+        422,
+        'PICKUP_UNFEASIBLE',
+        'No valid schedule meets the requested pickup time',
+        {
+          earliest_feasible_pickup: new Date(earliest).toISOString(),
+          affected_orders: lateOrders,
+          unscheduled_stage_ids: schedule.unscheduledStageIds,
+        },
+      )
+    }
     await tx.appointmentHistory.create({
       data: {
         orderId,
@@ -253,26 +395,26 @@ export async function pickupChange(req: Request, res: Response) {
         reason: getBody(req).reason ?? null,
       },
     })
-    return tx.laundryOrder.update({
-      where: { orderId },
-      data: { pickupAt: newPickupAt },
-      include: orderInclude,
-    })
+    return schedule
   })
-  res.json({ order: orderResource(updated), schedule: updated.batches })
+  res.json({ order: orderResource(await getOrder(orderId)), schedule: result })
 }
 export async function reschedule(req: Request, res: Response) {
-  const order = await getOrder(getId(req.params.orderId))
+  const orderId = getId(req.params.orderId)
+  const order = await getOrder(orderId)
   if (!order) fail(404, 'NOT_FOUND', 'Order not found')
+  const result = await rescheduleAll(getBody(req).reason ?? 'MANUAL')
   res.json({
-    order: orderResource(order),
+    order: orderResource(await getOrder(orderId)),
     reason: getBody(req).reason ?? 'MANUAL',
     locked_stage_ids: order.batches.flatMap((b) =>
       b.stages
         .filter((s) => s.status === 'IN_PROGRESS')
         .map((s) => s.batchStageId),
     ),
-    schedule: order.batches,
+    schedule: result,
+    affected_orders: result.affectedOrders,
+    changed_stage_ids: result.changedStageIds,
   })
 }
 export async function classification(req: Request, res: Response) {
@@ -324,5 +466,6 @@ export async function classification(req: Request, res: Response) {
       include: orderInclude,
     })
   })
-  res.json(orderResource(updated))
+  await rescheduleAll('BATCH_COMPOSITION_CHANGED')
+  res.json(orderResource(await getOrder(orderId)))
 }

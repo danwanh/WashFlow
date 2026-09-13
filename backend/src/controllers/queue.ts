@@ -25,18 +25,25 @@ export async function list(_req: Request, res: Response) {
 
   const tasks: any[] = []
   for (const order of orders) {
-    const addOrderTask = (action: string, button: string, detail: string) => {
+    const addOrderTask = (
+      action: string,
+      actionType: string,
+      button: string,
+      detail: string,
+    ) => {
       tasks.push({
         order_id: order.orderId,
         batch_id: null,
         batch_stage_id: null,
         rank: 0,
         action,
+        action_type: actionType,
         customer: order.customer.name,
         group: 'Đơn hàng',
         detail,
         due: order.pickupAt.toISOString(),
         status: order.status,
+        order_status: order.status,
         priority: order.priority,
         slack_minutes: null,
         machine_id: null,
@@ -52,11 +59,11 @@ export async function list(_req: Request, res: Response) {
       })
     }
     if (order.status === 'RECEIVED')
-      addOrderTask('PHÂN LOẠI', 'Xong', 'Xác nhận các mẻ đồ')
+      addOrderTask('PHÂN LOẠI', 'CLASSIFY', 'Xong', 'Xác nhận các mẻ đồ')
     if (order.status === 'FOLDING_PACKING')
-      addOrderTask('XẾP ĐỒ', 'Xong', 'Đóng gói toàn bộ đơn')
+      addOrderTask('XẾP ĐỒ', 'PACK', 'Xong', 'Đóng gói toàn bộ đơn')
     if (order.status === 'READY')
-      addOrderTask('CHỜ GỬI TIN KHÁCH', 'Gửi tin khách', 'Đơn đã sẵn sàng')
+      addOrderTask('CHỜ GỬI TIN KHÁCH', 'NOTIFY', 'Gửi tin khách', 'Đơn đã sẵn sàng')
 
     if (order.status === 'RECEIVED') continue
     for (const batch of order.batches) {
@@ -92,6 +99,12 @@ export async function list(_req: Request, res: Response) {
           : stage.status === 'IN_PROGRESS'
             ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? label}`
             : `VÀO MÁY ${label} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
+      const actionType =
+        stage.status === 'MACHINE_FINISHED'
+          ? 'UNLOAD'
+          : stage.status === 'IN_PROGRESS'
+            ? 'MACHINE_FINISHED'
+            : 'START'
       const button =
         stage.status === 'MACHINE_FINISHED'
           ? 'Xong'
@@ -104,6 +117,7 @@ export async function list(_req: Request, res: Response) {
         batch_stage_id: stage.batchStageId,
         rank: 0,
         action,
+        action_type: actionType,
         customer: order.customer.name,
         group: `Mẻ ${batch.batchNo}`,
         detail: `${Number(batch.weightKg).toFixed(1)}kg · ${stageStatusLabel(stage.status)}`,
@@ -116,6 +130,7 @@ export async function list(_req: Request, res: Response) {
           stage.actualMachineFinishedAt?.toISOString() ?? null,
         due: order.pickupAt.toISOString(),
         status: batch.status,
+        order_status: order.status,
         stage_status: stage.status,
         priority: order.priority,
         slack_minutes: slackMinutes,

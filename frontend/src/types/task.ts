@@ -6,7 +6,8 @@ export type Task = {
   group: string
   detail: string
   due: string
-  tone: 'blue' | 'amber' | 'slate'
+  tone: 'blue' | 'amber' | 'slate' | 'green'
+  actionType?: 'CLASSIFY' | 'START' | 'MACHINE_FINISHED' | 'UNLOAD' | 'PACK' | 'NOTIFY'
   badge?: string
   companion?: string
   button?: string

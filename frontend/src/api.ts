@@ -47,11 +47,13 @@ export type QueueTask = {
   batch_stage_id: number | null
   rank: number
   action: string
+  action_type: 'CLASSIFY' | 'START' | 'MACHINE_FINISHED' | 'UNLOAD' | 'PACK' | 'NOTIFY'
   customer: string
   group: string
   detail: string
   due: string
   status: string
+  order_status: string
   stage_status?: string
   priority: number
   slack_minutes: number | null
@@ -81,6 +83,19 @@ export type QueueResponse = {
     processing_minutes: number
     active_task: QueueTask | null
   }>
+}
+
+export type Alert = {
+  alert_id: number
+  order_id: number
+  batch_id: number | null
+  type: string
+  severity: string
+  status: 'OPEN' | 'SNOOZED' | 'RESOLVED'
+  reason: string
+  detected_at: string
+  snoozed_until: string | null
+  resolved_at: string | null
 }
 
 export type OrderDetails = {
@@ -117,6 +132,28 @@ export type OrderDetails = {
   }>
 }
 
+export type PickupChangeResponse = {
+  order: OrderDetails
+  schedule: {
+    affectedOrders: Array<{ orderId: number; estimatedAt: string; late: boolean }>
+    changedStageIds: number[]
+    lockedStageIds: number[]
+  }
+}
+export type PickupPreviewResponse = {
+  feasible: boolean
+  affected_orders: Array<{
+    order_id: number
+    customer: string
+    pickup_at: string | null
+    estimated_at: string
+    late: boolean
+    preexisting_late?: boolean
+  }>
+  unscheduled_stage_ids: number[]
+  earliest_feasible_pickup: string | null
+}
+
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
@@ -130,7 +167,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
     throw new Error('Không thể kết nối máy chủ. Vui lòng thử lại.')
   }
   const body = (await response.json().catch(() => ({}))) as T & {
-    error?: { code?: string; message?: string }
+    error?: { code?: string; message?: string; details?: unknown }
   }
   if (!response.ok) {
     const messages: Record<string, string> = {
@@ -139,10 +176,14 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       STAGE_LOCKED: 'Tác vụ đang chạy và không thể thay đổi',
       NOTIFICATION_FAILED: 'Không gửi được thông báo cho khách',
       NOT_FOUND: 'Không tìm thấy dữ liệu tác vụ',
+      PICKUP_UNFEASIBLE: 'Giờ hẹn mới không khả thi với lịch xử lý hiện tại',
     }
-    throw new Error(
+    const error = new Error(
       messages[body.error?.code ?? ''] ?? 'Không thể cập nhật dữ liệu. Vui lòng thử lại.',
-    )
+    ) as Error & { code?: string; details?: unknown }
+    error.code = body.error?.code
+    error.details = body.error?.details
+    throw error
   }
   return body
 }
@@ -162,8 +203,47 @@ export function getQueue() {
   return request<QueueResponse>('/queue', { method: 'GET' })
 }
 
+export function scanAlerts() {
+  return request<{ scannedAt: string; changed: Alert[] }>('/alerts/scan', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function getAlerts() {
+  return request<Alert[]>('/alerts?status=OPEN,SNOOZED', { method: 'GET' })
+}
+
+export function snoozeAlert(alertId: number) {
+  return request<Alert>(`/alerts/${alertId}/snooze`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function resolveAlert(alertId: number) {
+  return request<Alert>(`/alerts/${alertId}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export function getOrder(orderId: number) {
   return request<OrderDetails>(`/orders/${orderId}`, { method: 'GET' })
+}
+
+export function changePickupTime(orderId: number, newPickupAt: string) {
+  return request<PickupChangeResponse>(`/orders/${orderId}/pickup-change`, {
+    method: 'POST',
+    body: JSON.stringify({ new_pickup_at: newPickupAt }),
+  })
+}
+
+export function previewPickupTime(orderId: number, newPickupAt: string) {
+  return request<PickupPreviewResponse>(`/orders/${orderId}/pickup-change`, {
+    method: 'POST',
+    body: JSON.stringify({ new_pickup_at: newPickupAt, preview: true }),
+  })
 }
 
 export function updateStage(

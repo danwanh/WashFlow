@@ -87,6 +87,10 @@ function App() {
           task={selected}
           onClose={() => setModal(null)}
           onAction={() => void processDetailAction()}
+          onPickupChanged={() => {
+            setQueueRefresh((value) => value + 1)
+            showToast()
+          }}
         />
       )}
       {modal === 'create' && (

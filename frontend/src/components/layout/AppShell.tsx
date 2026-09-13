@@ -1,6 +1,7 @@
 import { CheckCircle2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Topbar } from './Topbar'
+import { AlertBell } from '../alerts/AlertBell'
 
 type AppShellProps = {
   children: ReactNode
@@ -23,6 +24,7 @@ export function AppShell({
     <div className="app-shell">
       <Topbar onCreate={onCreate} onOrder={onOrder} onScenario={onScenario} />
       <main className="workspace">{children}</main>
+      <AlertBell />
       {toast && (
         <div className="toast">
           <CheckCircle2 size={30} fill="currentColor" />

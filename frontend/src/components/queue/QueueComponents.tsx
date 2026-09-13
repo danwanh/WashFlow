@@ -1,4 +1,4 @@
-import { Check, Clock, MessageCircle } from 'lucide-react'
+import { Check, Clock, MessageCircle, PackageCheck, Tags } from 'lucide-react'
 import type { DragEvent, ReactNode } from 'react'
 import type { QueueTask } from '../../api'
 import type { Task } from '../../types/task'
@@ -32,6 +32,23 @@ function LaundryBagIcon() {
   )
 }
 
+function TaskIcon({ actionType }: { actionType?: Task['actionType'] }) {
+  if (actionType === 'CLASSIFY') return <Tags size={24} strokeWidth={1.8} />
+  if (actionType === 'PACK') return <PackageCheck size={24} strokeWidth={1.8} />
+  if (actionType === 'NOTIFY') return <MessageCircle size={24} strokeWidth={1.8} />
+  if (actionType === 'START' || actionType === 'MACHINE_FINISHED' || actionType === 'UNLOAD') {
+    return <LaundryBagIcon />
+  }
+  return <LaundryBagIcon />
+}
+
+function ActionButtonIcon({ actionType }: { actionType?: Task['actionType'] }) {
+  if (actionType === 'NOTIFY') return <MessageCircle size={15} />
+  if (actionType === 'PACK') return <PackageCheck size={15} />
+  if (actionType === 'CLASSIFY') return <Tags size={15} />
+  return <Check size={15} />
+}
+
 export function TaskCard({
   task,
   now,
@@ -40,6 +57,8 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
   onReschedule,
+  canAcceptUnload,
+  onUnloadDrop,
 }: {
   task: Task
   now: number
@@ -48,6 +67,8 @@ export function TaskCard({
   onDragStart: () => void
   onDragEnd: () => void
   onReschedule: () => void
+  canAcceptUnload?: boolean
+  onUnloadDrop?: () => void
 }) {
   const canDrag =
     task.stageStatus === 'PLANNED' &&
@@ -58,20 +79,38 @@ export function TaskCard({
   const stageEnd = task.plannedEndAt ? new Date(task.plannedEndAt).getTime() : 0
   const remaining =
     task.stageStatus === 'IN_PROGRESS' && stageEnd ? Math.ceil((stageEnd - now) / 60000) : null
-  const timeLabel =
+  const waitMinutes =
     task.stageStatus === 'PLANNED' && task.plannedStartAt
-      ? `Đợi ${Math.max(0, Math.ceil((new Date(task.plannedStartAt).getTime() - now) / 60000))} phút`
+      ? Math.ceil((new Date(task.plannedStartAt).getTime() - now) / 60000)
+      : null
+  const timeLabel =
+    waitMinutes !== null && waitMinutes > 0
+      ? `Đợi ${waitMinutes} phút`
       : task.stageStatus === 'IN_PROGRESS'
         ? remaining !== null && remaining < 0
           ? `Trễ ${Math.abs(remaining)} phút`
           : `Còn ${Math.max(0, remaining ?? 0)} phút`
         : task.stageStatus === 'MACHINE_FINISHED'
           ? 'Chờ dỡ đồ'
-          : deadline && due && deadline > due
-            ? `Trễ ${Math.ceil((deadline - due) / 60000)} phút`
+          : deadline && due && Math.max(deadline, now) > due
+            ? `Trễ ${Math.ceil((Math.max(deadline, now) - due) / 60000)} phút`
             : 'Đúng hẹn'
   return (
-    <article className={`task-card ${task.rank === 1 ? 'selected' : ''}`} onClick={onClick}>
+    <article
+      className={`task-card ${task.rank === 1 ? 'selected' : ''} ${canAcceptUnload ? 'unload-target' : ''}`}
+      onClick={onClick}
+      onDragOver={(event) => {
+        if (!canAcceptUnload) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(event) => {
+        if (!canAcceptUnload) return
+        event.preventDefault()
+        event.stopPropagation()
+        onUnloadDrop?.()
+      }}
+    >
       <div className="rank">
         {task.rank === 1 && <span>★</span>}
         <b>{task.rank}</b>
@@ -92,7 +131,7 @@ export function TaskCard({
         }}
         title={canDrag ? 'Kéo túi vào máy' : undefined}
       >
-        <LaundryBagIcon />
+        <TaskIcon actionType={task.actionType} />
       </div>
       <div className="task-info">
         <div className="task-title">
@@ -105,11 +144,13 @@ export function TaskCard({
           {task.detail} <i>·</i> <strong>Hẹn {task.due}</strong>
           {task.button !== 'Đôn đơn' && <a>Chỉnh giờ hẹn</a>}
         </div>
-        <div className={`task-timing ${timeLabel.startsWith('Trễ') ? 'late' : ''}`}>
-          <Clock size={13} /> {timeLabel}
-        </div>
       </div>
       <div className="task-action">
+        {timeLabel && (
+          <div className={`task-timing ${timeLabel.startsWith('Trễ') ? 'late' : ''}`}>
+            <Clock size={13} /> {timeLabel}
+          </div>
+        )}
         {task.button &&
           (['✓  Xong', 'Xong', 'Máy xong', 'Gửi tin khách'].includes(task.button) ? (
             <button
@@ -119,7 +160,8 @@ export function TaskCard({
                 onComplete()
               }}
             >
-              <Check size={15} /> Xong
+              <ActionButtonIcon actionType={task.actionType} />
+              {task.actionType === 'NOTIFY' ? 'Gửi tin khách' : task.button === 'Máy xong' ? 'Máy xong' : 'Xong'}
             </button>
           ) : (
             <button
@@ -133,19 +175,9 @@ export function TaskCard({
             </button>
           ))}
         {canDrag && <small className="drag-hint">Kéo túi vào máy phù hợp</small>}
+        {canAcceptUnload && <small className="drag-hint unload-hint">Thả túi từ máy vào đây</small>}
       </div>
     </article>
-  )
-}
-
-export function Upcoming({ time, id }: { time: string; id: string }) {
-  return (
-    <div className="upcoming-row">
-      <b>{time}</b>
-      <strong>PHÂN LOẠI</strong>
-      <span>{id}</span>
-      <em>Chờ đồ đến</em>
-    </div>
   )
 }
 
@@ -199,6 +231,7 @@ export function MachinePane({
   onDrop,
   onUnloadDragStart,
   onUnloadDragEnd,
+  widthPercent,
 }: {
   machines: Array<{
     machine_id: number
@@ -214,6 +247,7 @@ export function MachinePane({
   onDrop: (machine: string) => void
   onUnloadDragStart: (task: QueueTask) => void
   onUnloadDragEnd: () => void
+  widthPercent?: number
 }) {
   const washers = machines.filter((machine) => machine.type === 'WASHER')
   const dryers = machines.filter((machine) => machine.type === 'DRYER')
@@ -224,8 +258,10 @@ export function MachinePane({
       OFFLINE: 'Ngoại tuyến',
       MAINTENANCE: 'Bảo trì',
     })[status] ?? 'Không rõ'
-  const renderMachine = (machine: (typeof machines)[number]) => (
-    <Machine
+  const renderMachine = (machine: (typeof machines)[number]) => {
+    const validDrop = canDrop(machine.name)
+    return (
+      <Machine
       key={machine.machine_id}
       title={machine.name}
       state={
@@ -235,19 +271,35 @@ export function MachinePane({
             ? `Còn ${Math.max(0, Math.ceil((new Date(machine.active_task.planned_end_at).getTime() - now) / 60000))} phút`
             : machineState(machine.status)
       }
-      tone={machine.status === 'AVAILABLE' ? 'empty' : machine.status === 'BUSY' ? 'blue' : 'amber'}
+      tone={
+        machine.active_task?.stage_status === 'MACHINE_FINISHED'
+          ? 'amber'
+          : machine.status === 'AVAILABLE'
+            ? 'empty'
+            : machine.status === 'BUSY'
+              ? 'blue'
+              : 'amber'
+      }
       dropTarget={dropTarget === machine.name}
+      validDrop={validDrop}
       onDragOver={() => onDragOver(machine.name)}
       canDrop={canDrop(machine.name)}
       activeTask={machine.active_task}
-      draggable={machine.active_task?.stage_status === 'MACHINE_FINISHED'}
       onDragStart={() => machine.active_task && onUnloadDragStart(machine.active_task)}
       onDragEnd={onUnloadDragEnd}
       onDrop={() => onDrop(machine.name)}
-    />
-  )
+      />
+    )
+  }
   return (
-    <aside className="machines-pane">
+    <aside
+      className="machines-pane"
+      style={
+        widthPercent === undefined
+          ? undefined
+          : { width: `${widthPercent}%`, flexBasis: `${widthPercent}%` }
+      }
+    >
       <MachineGroup title="MÁY GIẶT" count={`${washers.length} MÁY`}>
         {washers.map(renderMachine)}
       </MachineGroup>
@@ -282,11 +334,11 @@ function Machine({
   tone,
   tag,
   dropTarget,
+  validDrop = false,
   onDragOver,
   onDrop,
   canDrop = true,
   activeTask,
-  draggable = false,
   onDragStart,
   onDragEnd,
 }: {
@@ -295,11 +347,11 @@ function Machine({
   tone: string
   tag?: string
   dropTarget: boolean
+  validDrop?: boolean
   onDragOver: () => void
   onDrop: () => void
   canDrop?: boolean
   activeTask?: QueueTask | null
-  draggable?: boolean
   onDragStart?: () => void
   onDragEnd?: () => void
 }) {
@@ -310,23 +362,35 @@ function Machine({
   }
   return (
     <div
-      className={`machine ${tone} ${activeTask?.stage_status === 'IN_PROGRESS' ? 'machine-running' : ''} ${dropTarget ? 'machine-drop-target' : ''}`}
+      className={`machine ${tone} ${activeTask?.stage_status === 'IN_PROGRESS' ? 'machine-running' : ''} ${validDrop ? 'machine-drop-available' : ''} ${dropTarget ? 'machine-drop-target' : ''}`}
       onDragOver={canDrop ? handleOver : undefined}
       onDragEnter={canDrop ? handleOver : undefined}
       onDrop={(event) => {
         event.preventDefault()
         if (canDrop) onDrop()
       }}
-      draggable={draggable}
-      onDragStart={(event) => {
-        if (!draggable) return
-        event.stopPropagation()
-        event.dataTransfer.effectAllowed = 'move'
-        onDragStart?.()
-      }}
-      onDragEnd={onDragEnd}
     >
-      <MachineIcon tone={tone} />
+      <div className="machine-visual">
+        <MachineIcon tone={tone} />
+        {activeTask?.stage_status === 'MACHINE_FINISHED' && (
+          <div
+            className="machine-bag"
+            draggable
+            title="Kéo túi về đơn hàng"
+            onDragStart={(event) => {
+              event.stopPropagation()
+              event.dataTransfer.effectAllowed = 'move'
+              onDragStart?.()
+            }}
+            onDragEnd={(event) => {
+              event.stopPropagation()
+              onDragEnd?.()
+            }}
+          >
+            <LaundryBagIcon />
+          </div>
+        )}
+      </div>
       <strong>{title}</strong>
       <b>{state}</b>
       {activeTask && (
@@ -336,32 +400,5 @@ function Machine({
       )}
       {tag && !activeTask && <small>{tag}</small>}
     </div>
-  )
-}
-
-export function OrderSummary() {
-  return (
-    <article className="task-card order-summary-card">
-      <div className="rank">
-        <b>•</b>
-      </div>
-      <div className="bag amber">
-        <MessageCircle size={23} />
-      </div>
-      <div className="task-info">
-        <div className="task-title">
-          <strong>CHỜ GỬI TIN KHÁCH</strong>
-        </div>
-        <div className="customer">
-          Nguyễn Văn A · <b>#123</b>
-        </div>
-        <div className="meta">
-          Đồ trắng đã giặt xong (Máy 02) · Đang chờ Đồ màu hoàn tất giặt sấy
-        </div>
-      </div>
-      <button className="notify-locked" disabled>
-        <MessageCircle size={13} /> Gửi tin khách
-      </button>
-    </article>
   )
 }
