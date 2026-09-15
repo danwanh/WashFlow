@@ -1,27 +1,27 @@
 ---
 name: WashFlow Operational Laundry Design System
 colors:
-  background: '#F8FAFC'
-  surface: '#FFFFFF'
-  surface-muted: '#F1F5F9'
-  surface-subtle: '#EFF4FF'
-  text-primary: '#0F172A'
-  text-secondary: '#64748B'
-  border: '#E2E8F0'
-  border-strong: '#CBD5E1'
-  primary: '#1E293B'
-  primary-hover: '#0F172A'
-  interactive: '#2563EB'
-  interactive-hover: '#1D4ED8'
-  info: '#0284C7'
-  info-surface: '#F0F9FF'
-  warning: '#D97706'
-  warning-surface: '#FFFBEB'
-  success: '#059669'
-  success-surface: '#ECFDF5'
-  error: '#DC2626'
-  error-surface: '#FEF2F2'
-  focus: '#2563EB'
+  background: "#F8FAFC"
+  surface: "#FFFFFF"
+  surface-muted: "#F1F5F9"
+  surface-subtle: "#EFF4FF"
+  text-primary: "#0F172A"
+  text-secondary: "#64748B"
+  border: "#E2E8F0"
+  border-strong: "#CBD5E1"
+  primary: "#1E293B"
+  primary-hover: "#0F172A"
+  interactive: "#2563EB"
+  interactive-hover: "#1D4ED8"
+  info: "#0284C7"
+  info-surface: "#F0F9FF"
+  warning: "#D97706"
+  warning-surface: "#FFFBEB"
+  success: "#059669"
+  success-surface: "#ECFDF5"
+  error: "#DC2626"
+  error-surface: "#FEF2F2"
+  focus: "#2563EB"
 ---
 
 # Design System: WashFlow
@@ -148,7 +148,7 @@ Anchor generated screens in `#F8FAFC`, `#FFFFFF`, `#0F172A`, `#1E293B`, and `#25
 
 - “Create a dense desktop laundry work queue with a 240px slate navigation rail, compact white ticket cards, JetBrains Mono ticket IDs and timers, and blue selected-row accents.”
 - “Add a 420px inspection drawer for the selected laundry ticket, with garment groups, exception badges, quality notes, and one clear next-action button.”
-- “Create a machine status board using compact bordered tiles, live monospace countdowns, and thin blue or emerald progress bars.”
+- “Create a machine status board using compact bordered tiles, live Montserrat countdowns, and thin blue or emerald progress bars.”
 
 ### Incremental Iteration
 

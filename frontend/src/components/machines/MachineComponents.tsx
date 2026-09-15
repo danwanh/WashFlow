@@ -47,6 +47,8 @@ export function Card({
   time,
   action,
   onAction,
+  status,
+  onStatusChange,
 }: {
   name: string
   capacity: string
@@ -56,6 +58,8 @@ export function Card({
   time?: string
   action?: string
   onAction?: () => void
+  status?: string
+  onStatusChange?: (status: string) => void
 }) {
   return (
     <section className={`machine-board-card ${tone}`}>
@@ -74,7 +78,17 @@ export function Card({
           <small>{action ? 'Đơn hàng:' : tone === 'empty' ? 'Khả dụng:' : 'Đang chạy:'}</small>
           <b>{detail}</b>
         </div>
-        {action ? (
+        {onStatusChange ? (
+          <div className="machine-actions">
+            <select value={status} onChange={(event) => onStatusChange(event.target.value)}>
+              <option value="AVAILABLE">Khả dụng</option>
+              <option value="BUSY" disabled>Đang chạy</option>
+              <option value="MAINTENANCE">Bảo trì</option>
+              <option value="OFFLINE">Ngoại tuyến</option>
+            </select>
+            {action && <button className="done" onClick={onAction}>{action}</button>}
+          </div>
+        ) : action ? (
           <button className="done" onClick={onAction}>
             {action}
           </button>

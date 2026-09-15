@@ -694,7 +694,7 @@ button.done {
   font-size: 14px;
 }
 .upcoming-row > b {
-  font-family: monospace;
+  font-family: Montserrat;
   color: #53647e;
 }
 .upcoming-row strong {
@@ -1212,6 +1212,38 @@ button.done {
   padding: 32px 40px;
   background: #f8fafc;
 }
+.data-state {
+  padding: 24px;
+  color: #64748b;
+  text-align: center;
+}
+.date-filter {
+  display: flex;
+  gap: 12px;
+  margin: -6px 0 20px;
+}
+.date-filter label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+.date-filter input,
+.machine-actions select {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+}
+.machine-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
 .view-header {
   display: flex;
   align-items: flex-start;
@@ -1256,7 +1288,7 @@ button.done {
   font-size: 11px;
 }
 .kpi b {
-  font: 900 25px monospace;
+  font: 900 25px Montserrat;
 }
 .kpi span {
   font-size: 11px;
@@ -1352,7 +1384,7 @@ button.done {
   z-index: 1;
 }
 .donut b {
-  font: 900 20px monospace;
+  font: 900 20px Montserrat;
 }
 .donut small {
   color: #059669;
@@ -1391,7 +1423,7 @@ button.done {
   grid-template-columns: 55px 1fr 30px;
   gap: 9px;
   align-items: center;
-  font: 11px monospace;
+  font: 11px Montserrat;
 }
 .horizontal-bars span {
   height: 11px;
@@ -1429,7 +1461,7 @@ button.done {
 }
 .orders-table .code {
   color: #0369a1;
-  font-family: monospace;
+  font-family: Montserrat;
   font-weight: 800;
 }
 .orders-table .strong {
@@ -1555,7 +1587,7 @@ button.done {
   margin-top: 4px;
 }
 .machine-board-card footer > strong {
-  font: 800 15px monospace;
+  font: 800 15px Montserrat;
   color: #0369a1;
 }
 .machine-board-card.green footer > strong {
@@ -1679,7 +1711,7 @@ button.done {
 }
 .compact-deadline strong {
   color: #0369a1;
-  font: 800 18px monospace;
+  font: 800 18px Montserrat;
 }
 .compact-deadline span {
   color: #059669;
@@ -1710,7 +1742,7 @@ button.done {
   border-radius: 6px;
   padding: 5px;
   color: #0369a1;
-  font: 700 12px monospace;
+  font: 700 12px Montserrat;
 }
 .pickup-editor {
   display: grid;
@@ -1886,7 +1918,7 @@ button.done {
   border: 2px solid #cbd5e1;
   border-radius: 50%;
   background: #fff;
-  font: 700 10px monospace;
+  font: 700 10px Montserrat;
   font-style: normal;
   flex: 0 0 auto;
 }
@@ -2003,7 +2035,7 @@ button.done {
 .group-row > strong {
   flex-shrink: 0;
   color: #334155;
-  font: 700 12px monospace;
+  font: 700 12px Montserrat;
 }
 .group-dot {
   width: 10px;
@@ -2076,7 +2108,7 @@ button.done {
   gap: 6px;
 }
 .time-check input {
-  font-family: monospace;
+  font-family: Montserrat;
   text-align: center;
 }
 .time-check button {
@@ -2129,7 +2161,7 @@ button.done {
 }
 .item-chips small {
   color: #64748b;
-  font: 600 10px monospace;
+  font: 600 10px Montserrat;
 }
 .split-toggle {
   display: flex;
@@ -2209,7 +2241,7 @@ button.done {
 }
 .partition-item strong {
   color: #334155;
-  font: 700 12px monospace;
+  font: 700 12px Montserrat;
 }
 .partition-footer {
   display: flex;
@@ -2256,7 +2288,7 @@ button.done {
 }
 .total-box b {
   color: #0369a1;
-  font: 900 16px monospace;
+  font: 900 16px Montserrat;
   white-space: nowrap;
 }
 .feasibility {
@@ -2332,7 +2364,7 @@ button.done {
 .price b {
   color: #0369a1;
   font-size: 17px;
-  font-family: monospace;
+  font-family: Montserrat;
 }
 .success-box {
   justify-content: flex-start;
@@ -2482,7 +2514,7 @@ button.done {
   color: #1e293b;
 }
 .create-order-spec-modal .time-input {
-  font-family: monospace;
+  font-family: Montserrat;
   font-weight: 800;
 }
 .spec-quick-items {
@@ -2509,7 +2541,7 @@ button.done {
 }
 .order-item-row > strong {
   color: #94a3b8;
-  font: 700 11px monospace;
+  font: 700 11px Montserrat;
   text-align: center;
 }
 .order-item-row input {
@@ -2530,7 +2562,7 @@ button.done {
   top: 10px;
   right: 7px;
   color: #94a3b8;
-  font: 700 10px monospace;
+  font: 700 10px Montserrat;
 }
 .remove-item {
   display: grid;
@@ -2691,7 +2723,7 @@ button.done {
 .batch-schedule-heading strong {
   flex: 0 0 auto;
   color: #0369a1;
-  font: 700 10px monospace;
+  font: 700 10px Montserrat;
 }
 .schedule-progress {
   display: flex;
@@ -2728,7 +2760,7 @@ button.done {
   border-radius: 50%;
   background: #eff6ff;
   color: #0369a1;
-  font: 800 10px monospace;
+  font: 800 10px Montserrat;
 }
 .schedule-stages {
   display: grid;
@@ -2756,7 +2788,7 @@ button.done {
 }
 .schedule-stage span {
   color: #64748b;
-  font-family: monospace;
+  font-family: Montserrat;
 }
 .trial-timeline > span {
   position: relative;
@@ -2787,7 +2819,7 @@ button.done {
   border-radius: 50%;
   background: #eff6ff;
   color: #0369a1;
-  font: 800 10px monospace;
+  font: 800 10px Montserrat;
   font-style: normal;
 }
 .trial-timeline small {

@@ -1,7 +1,14 @@
-import { initialTasks } from '../../data/mockTasks'
-import type { Task } from '../../types/task'
+import type { OrderSummary } from '../../api'
 
-export function OrdersTable({ onOpen }: { onOpen: (task: Task) => void }) {
+const statusLabels: Record<string, string> = {
+  RECEIVED: 'Mới tiếp nhận',
+  WAITING: 'Đang xử lý',
+  FOLDING_PACKING: 'Đang xếp đồ',
+  READY: 'Sẵn sàng lấy',
+  COMPLETED: 'Đã hoàn tất',
+}
+
+export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen: (order: OrderSummary) => void }) {
   return (
     <div className="orders-table">
       <table>
@@ -16,19 +23,19 @@ export function OrdersTable({ onOpen }: { onOpen: (task: Task) => void }) {
           </tr>
         </thead>
         <tbody>
-          {initialTasks.slice(0, 4).map((task) => (
-            <tr key={`${task.id}-${task.rank}`}>
-              <td className="code">#{task.id}</td>
-              <td className="strong">{task.customer}</td>
+          {orders.map((order) => (
+            <tr key={order.order_id}>
+              <td className="code">#{order.order_id}</td>
+              <td className="strong">{order.customer.name}</td>
               <td>
-                <span className="table-pill">{task.group}</span>
+                <span className="table-pill">{order.service_type.replace('_', ' + ')}</span>
               </td>
-              <td className="code">{task.due}</td>
+              <td className="code">{new Date(order.pickup_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</td>
               <td>
-                <span className={`status ${task.tone}`}>{task.action}</span>
+                <span className={`status ${order.status === 'READY' ? 'green' : order.status === 'COMPLETED' ? 'slate' : 'blue'}`}>{statusLabels[order.status] ?? order.status}</span>
               </td>
               <td>
-                <button className="table-action" onClick={() => onOpen(task)}>
+                <button className="table-action" onClick={() => onOpen(order)}>
                   Xem chi tiết
                 </button>
               </td>

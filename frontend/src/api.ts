@@ -85,6 +85,53 @@ export type QueueResponse = {
   }>
 }
 
+export type OrderSummary = {
+  order_id: number
+  customer: { name: string; phone: string }
+  service_type: ServiceType
+  status: string
+  total_weight_kg: number
+  pickup_at: string
+  estimated_at: string
+  priority: number
+  active_alert_count: number
+  batches: number
+}
+
+export type Machine = {
+  machine_id: number
+  name: string
+  type: 'WASHER' | 'DRYER'
+  status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'MAINTENANCE'
+  capacity_kg: number
+  processing_minutes: number
+  updated_at: string
+  active_stage: {
+    batch_stage_id: number
+    stage: string
+    status: string
+    order_id: number | null
+    customer: string | null
+    planned_end_at: string | null
+  } | null
+}
+
+export type OverviewResponse = {
+  from: string
+  to: string
+  kpis: {
+    revenue: number
+    orderCount: number
+    processingCount: number
+    onTimeCount: number
+    lateCount: number
+  }
+  revenueByHour: Array<{ label: string; value: number }>
+  appointmentStatus: { onTime: number; late: number }
+  pickupPeaks: Array<{ label: string; value: number }>
+  ordersByDay: Array<{ label: string; value: number }>
+}
+
 export type Alert = {
   alert_id: number
   order_id: number
@@ -201,6 +248,25 @@ export function createOrder(planId: string) {
 
 export function getQueue() {
   return request<QueueResponse>('/queue', { method: 'GET' })
+}
+
+export function getOrders() {
+  return request<OrderSummary[]>('/orders', { method: 'GET' })
+}
+
+export function getMachines() {
+  return request<Machine[]>('/machines', { method: 'GET' })
+}
+
+export function updateMachineStatus(machineId: number, status: Machine['status']) {
+  return request<Machine>(`/machines/${machineId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export function getOverview(from: string, to: string) {
+  return request<OverviewResponse>(`/overview?from=${from}&to=${to}`, { method: 'GET' })
 }
 
 export function scanAlerts() {
