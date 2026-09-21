@@ -105,6 +105,14 @@ export function DetailModal({
   }, [task.orderId])
   const formatTime = (value: string) =>
     new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+  const formatDateTime = (value: string) =>
+    new Date(value).toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   const localDateTime = (value: string) => {
     const date = new Date(value)
     const pad = (number: number) => String(number).padStart(2, '0')
@@ -124,7 +132,7 @@ export function DetailModal({
       const earliest = requestError.details?.earliest_feasible_pickup
       setError(
         earliest
-          ? `${requestError.message}. Giờ sớm nhất có thể: ${formatTime(earliest)}.`
+          ? `${requestError.message}. Giờ sớm nhất có thể: ${formatDateTime(earliest)}.`
           : requestError.message,
       )
     } finally {
@@ -142,16 +150,12 @@ export function DetailModal({
         .then((preview) => {
           setPickupPreview(preview)
           if (!preview.feasible) {
-            const lateOrders = preview.affected_orders.filter((affected) => affected.late)
-            const lateSummary = lateOrders.length
-              ? ` Đơn gây xung đột: ${lateOrders.map((affected) => `#${affected.order_id} (hẹn ${formatTime(affected.pickup_at ?? '')}, ETA ${formatTime(affected.estimated_at)})`).join(', ')}.`
-              : ''
             setError(
               preview.unscheduled_stage_ids.length
                 ? 'Không thể đổi giờ vì chưa có máy phù hợp cho một số công đoạn.'
                 : preview.earliest_feasible_pickup
-                  ? `Giờ hẹn mới không khả thi. ETA sớm nhất: ${formatTime(preview.earliest_feasible_pickup)}.${lateSummary}`
-                  : `Giờ hẹn mới không khả thi với lịch xử lý hiện tại.${lateSummary}`,
+                  ? `Giờ hẹn mới không khả thi. Giờ sớm nhất có thể: ${formatDateTime(preview.earliest_feasible_pickup)}.`
+                  : 'Giờ hẹn mới không khả thi với lịch xử lý hiện tại.',
             )
           }
         })
@@ -227,6 +231,18 @@ export function DetailModal({
                   value={newPickupAt}
                   onChange={(event) => setNewPickupAt(event.target.value)}
                 />
+                {pickupPreview?.earliest_feasible_pickup && !pickupPreview.feasible && (
+                  <button
+                    type="button"
+                    className="pickup-earliest-button"
+                    onClick={() => {
+                      setNewPickupAt(localDateTime(pickupPreview.earliest_feasible_pickup!))
+                      setError('')
+                    }}
+                  >
+                    Chọn giờ sớm nhất · {formatDateTime(pickupPreview.earliest_feasible_pickup)}
+                  </button>
+                )}
                 <div className="pickup-edit-actions">
                   <button
                     className="pickup-save-button"
@@ -256,15 +272,21 @@ export function DetailModal({
                     <b>Đơn bị ảnh hưởng</b>
                     {pickupPreview.affected_orders.length ? (
                       pickupPreview.affected_orders.map((affected) => (
-                        <div key={affected.order_id}>
-                          <span>
-                            #{affected.order_id} · {affected.customer}
-                          </span>
+                        <div
+                          key={affected.order_id}
+                          className={`pickup-affected-order ${affected.relation ?? 'affected'}`}
+                        >
+                          <div className="pickup-affected-order-heading">
+                            <span>#{affected.order_id} · {affected.customer}</span>
+                            {affected.relation === 'changing' && <em>Đang đổi giờ</em>}
+                            {affected.relation === 'same_group' && <em>Cùng nhóm</em>}
+                          </div>
+                          <small className="pickup-affected-order-time">
+                            Hẹn {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'} · Dự kiến xong {formatDateTime(affected.estimated_at)}
+                          </small>
                           <small
-                            className={affected.late && !affected.preexisting_late ? 'late' : ''}
+                            className={`pickup-affected-order-status ${affected.late && !affected.preexisting_late ? 'late' : ''}`}
                           >
-                            Hẹn {affected.pickup_at ? formatTime(affected.pickup_at) : '--:--'} ·
-                            ETA {formatTime(affected.estimated_at)} ·{' '}
                             {affected.preexisting_late
                               ? 'Đã trễ trước khi đổi giờ'
                               : affected.late
@@ -280,7 +302,7 @@ export function DetailModal({
                 )}
               </div>
             ) : (
-              <strong>{order ? formatTime(order.pickup_at) : task.due}</strong>
+              <strong>{order ? formatDateTime(order.pickup_at) : task.due}</strong>
             )}
             {!editingPickup && order && order.status !== 'COMPLETED' && (
               <button
@@ -314,7 +336,9 @@ export function DetailModal({
                 )
                 return item
                   ? `${item.item_type} · ${item.quantity} món`
-                  : `Nhóm #${allocation.order_item_id}`
+                  : allocation.order_item_id == null
+                    ? ''
+                    : `Nhóm #${allocation.order_item_id}`
               })
               .join(', ')
             const machineName = active?.machine_name ? ` · ${active.machine_name}` : ''
@@ -580,6 +604,7 @@ export function CreateOrderModal({
   })
   const [pickupAt, setPickupAt] = useState('16:00')
   const [note, setNote] = useState('')
+  const [totalAmount, setTotalAmount] = useState('')
   const [items, setItems] = useState<Item[]>([
     { id: 1, itemType: 'Đồ trắng', quantity: '1', weight: '1.5', note: '' },
   ])
@@ -620,6 +645,7 @@ export function CreateOrderModal({
           service_type: service,
           pickup_at: pickupTimestamp(),
           priority: 0,
+          total_amount: totalAmount ? Number(totalAmount) : undefined,
           special_note: note.trim() || undefined,
           items: items.map((item) => ({
             item_type: itemCode(item.itemType),
@@ -727,6 +753,10 @@ export function CreateOrderModal({
                   value={pickupAt}
                   onChange={(e) => setPickupAt(e.target.value)}
                 />
+              </label>
+              <label>
+                Tổng tiền
+                <input type="number" min="0" step="1000" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} placeholder="Tự tính theo kg" />
               </label>
             </div>
             <div className="field-block">
@@ -889,8 +919,8 @@ export function CreateOrderModal({
                   {noFeasibleMachine
                     ? 'Không thể lập lịch · Không có máy phù hợp'
                     : plan?.feasible
-                      ? `Khả thi · ETA ${estimated} · Đúng giờ hẹn`
-                      : `Không khả thi · ETA ${estimated} sau giờ hẹn`}
+                      ? `Khả thi · Dự kiến xong ${estimated} · Đúng giờ hẹn`
+                      : `Không khả thi · Dự kiến xong ${estimated} sau giờ hẹn`}
                 </b>
                 <small>
                   {noFeasibleMachine

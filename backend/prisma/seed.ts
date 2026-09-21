@@ -73,6 +73,7 @@ async function seedOrders(
     const itemType = itemTypes[index % itemTypes.length]!
     const weightKg = 1.5 + index * 0.5
     const serviceType = index % 2 === 0 ? 'WASH_DRY' : 'WASH'
+    const serviceRate = serviceType === 'WASH_DRY' ? 40000 : 25000
     const isHistorical = isProcessed
     const scheduleOffsetHours = status === 'RECEIVED' ? 1 : status === 'WAITING' ? 4 : 0
     const washStart = isHistorical
@@ -88,6 +89,7 @@ async function seedOrders(
         serviceType,
         status,
         totalWeightKg: new Prisma.Decimal(weightKg),
+        totalAmount: new Prisma.Decimal(weightKg * serviceRate),
         pickupAt: new Date(now.getTime() + (index + 2) * 60 * 60 * 1000),
         estimatedAt: isProcessed
           ? new Date(now.getTime() - 30 * 60 * 1000)
@@ -242,7 +244,8 @@ async function main() {
         serviceType: 'WASH_DRY',
          status: 'WAITING',
          classifiedAt: new Date(now.getTime() - 5 * 60 * 1000),
-        totalWeightKg: new Prisma.Decimal(2.5),
+         totalWeightKg: new Prisma.Decimal(2.5),
+         totalAmount: new Prisma.Decimal(2.5 * 40000),
         pickupAt: new Date(now.getTime() + 4 * 60 * 60 * 1000),
         estimatedAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
         priority: 1,
@@ -312,7 +315,8 @@ async function main() {
         serviceType: 'WASH',
          status: 'READY',
          classifiedAt: new Date(now.getTime() - 120 * 60 * 1000),
-        totalWeightKg: new Prisma.Decimal(3),
+         totalWeightKg: new Prisma.Decimal(3),
+         totalAmount: new Prisma.Decimal(3 * 25000),
         pickupAt: new Date(now.getTime() + 90 * 60 * 1000),
         estimatedAt: new Date(now.getTime() - 10 * 60 * 1000),
         priority: 0,

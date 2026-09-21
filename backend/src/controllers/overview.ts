@@ -21,7 +21,7 @@ export async function get(req: Request, res: Response) {
 
   const orders = await prisma.laundryOrder.findMany({
     where: { pickupAt: { gte: from, lt: to } },
-    select: { pickupAt: true, estimatedAt: true, status: true },
+    select: { pickupAt: true, estimatedAt: true, status: true, totalAmount: true },
     orderBy: { pickupAt: 'asc' },
   })
   const processingStatuses = new Set(['RECEIVED', 'WAITING', 'FOLDING_PACKING'])
@@ -29,11 +29,13 @@ export async function get(req: Request, res: Response) {
   const lateCount = orders.length - onTimeCount
   const ordersByDay = new Map<string, number>()
   const pickupPeaks = new Map<number, number>()
+  const revenueByHour = new Map<number, number>()
   for (const order of orders) {
     const day = order.pickupAt.toISOString().slice(0, 10)
     ordersByDay.set(day, (ordersByDay.get(day) ?? 0) + 1)
     const hour = order.pickupAt.getUTCHours()
     pickupPeaks.set(hour, (pickupPeaks.get(hour) ?? 0) + 1)
+    revenueByHour.set(hour, (revenueByHour.get(hour) ?? 0) + Number(order.totalAmount))
   }
 
   const days: Array<{ label: string; value: number }> = []
@@ -46,13 +48,16 @@ export async function get(req: Request, res: Response) {
     from: from.toISOString(),
     to: new Date(to.getTime() - 1).toISOString(),
     kpis: {
-      revenue: 0,
+       revenue: orders.reduce((sum, order) => sum + Number(order.totalAmount), 0),
       orderCount: orders.length,
       processingCount: orders.filter((order) => processingStatuses.has(order.status)).length,
       onTimeCount,
       lateCount,
     },
-    revenueByHour: [],
+     revenueByHour: [...revenueByHour.keys()].sort((a, b) => a - b).map((hour) => ({
+       label: `${String(hour).padStart(2, '0')}:00`,
+       value: revenueByHour.get(hour) ?? 0,
+     })),
     appointmentStatus: { onTime: onTimeCount, late: lateCount },
     pickupPeaks: peakHours.map((hour) => ({
       label: `${String(hour).padStart(2, '0')}:00`,

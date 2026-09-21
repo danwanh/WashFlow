@@ -24,7 +24,7 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
         </thead>
         <tbody>
           {orders.map((order) => (
-            <tr key={order.order_id}>
+            <tr key={order.order_id} className="order-row" onClick={() => onOpen(order)}>
               <td className="code">#{order.order_id}</td>
               <td className="strong">{order.customer.name}</td>
               <td>
@@ -35,7 +35,7 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
                 <span className={`status ${order.status === 'READY' ? 'green' : order.status === 'COMPLETED' ? 'slate' : 'blue'}`}>{statusLabels[order.status] ?? order.status}</span>
               </td>
               <td>
-                <button className="table-action" onClick={() => onOpen(order)}>
+                <button className="table-action" onClick={(event) => { event.stopPropagation(); onOpen(order) }}>
                   Xem chi tiết
                 </button>
               </td>

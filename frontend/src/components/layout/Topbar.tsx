@@ -1,4 +1,4 @@
-import { BarChart3, FileText, ListFilter, Plus, WashingMachine } from 'lucide-react'
+import { BarChart3, FileText, ListFilter, WashingMachine } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 type TopbarProps = {
@@ -64,20 +64,6 @@ export function Topbar({ onCreate, onOrder, onScenario }: TopbarProps) {
           <br />
           báo trễ
         </button>
-      </div>
-      <div className="live-meta">
-        <span className="live-dot" />
-        <span>
-          IoT
-          <br />
-          Kết nối
-        </span>
-        <i />
-        <strong>
-          14:52 · Ca
-          <br />
-          chiều (Khu A)
-        </strong>
       </div>
     </header>
   )

@@ -1,3 +1,5 @@
+import { Activity, CheckCircle2, CircleOff, Wrench } from 'lucide-react'
+
 function MachineIcon({ tone }: { tone: string }) {
   const color =
     tone === 'blue'
@@ -61,6 +63,13 @@ export function Card({
   status?: string
   onStatusChange?: (status: string) => void
 }) {
+  const statusMeta: Record<string, { label: string; icon: React.ReactNode }> = {
+    AVAILABLE: { label: 'Khả dụng', icon: <CheckCircle2 size={14} /> },
+    BUSY: { label: 'Đang chạy', icon: <Activity size={14} /> },
+    MAINTENANCE: { label: 'Bảo trì', icon: <Wrench size={14} /> },
+    OFFLINE: { label: 'Ngoại tuyến', icon: <CircleOff size={14} /> },
+  }
+  const currentStatus = statusMeta[status ?? '']
   return (
     <section className={`machine-board-card ${tone}`}>
       <div className="machine-board-head">
@@ -80,12 +89,15 @@ export function Card({
         </div>
         {onStatusChange ? (
           <div className="machine-actions">
-            <select value={status} onChange={(event) => onStatusChange(event.target.value)}>
-              <option value="AVAILABLE">Khả dụng</option>
-              <option value="BUSY" disabled>Đang chạy</option>
-              <option value="MAINTENANCE">Bảo trì</option>
-              <option value="OFFLINE">Ngoại tuyến</option>
-            </select>
+            <label className="machine-status-select">
+              <span>{currentStatus?.icon}</span>
+              <select value={status} onChange={(event) => onStatusChange(event.target.value)} aria-label={`Trạng thái ${name}`}>
+                <option value="AVAILABLE">Khả dụng</option>
+                <option value="BUSY" disabled>Đang chạy</option>
+                <option value="MAINTENANCE">Bảo trì</option>
+                <option value="OFFLINE">Ngoại tuyến</option>
+              </select>
+            </label>
             {action && <button className="done" onClick={onAction}>{action}</button>}
           </div>
         ) : action ? (

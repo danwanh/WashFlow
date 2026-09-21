@@ -80,6 +80,7 @@ model LaundryOrder {
   serviceType        ServiceType          @map("service_type")
   status             OrderStatus          @default(RECEIVED)
   totalWeightKg      Decimal              @map("total_weight_kg") @db.Decimal(5, 2)
+  totalAmount        Decimal              @default(0) @map("total_amount") @db.Decimal(12, 2)
   pickupAt           DateTime             @map("pickup_at")
   estimatedAt        DateTime             @map("estimated_at")
   priority           Int                  @default(0)

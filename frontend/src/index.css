@@ -40,6 +40,8 @@ button {
   padding: 0 30px;
   gap: 20px;
 }
+.topbar .brand-area { flex: 1; }
+.topbar .main-nav { margin: 0 auto; }
 .brand-area,
 .live-meta,
 .title-row,
@@ -112,7 +114,9 @@ button {
   flex: 1 1 0;
   justify-content: center;
   min-width: 96px;
+  text-decoration: none !important;
 }
+.nav-button * { text-decoration: none !important; }
 .nav-button.active {
   background: #eff6ff;
   border: 1px solid #93d5ff;
@@ -932,6 +936,35 @@ button.done {
   background: white;
   box-shadow: 0 16px 45px #0f172a2b;
 }
+.alert-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #0f172a66;
+}
+.alert-modal {
+  width: min(460px, 100%);
+  padding: 30px;
+  border: 1px solid #bae6fd;
+  border-top: 4px solid #0284c7;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px #0f172a40;
+  text-align: center;
+}
+.alert-modal.warning { border-color: #fcd34d; border-top-color: #d97706; }
+.alert-modal.critical { border-color: #fda4af; border-top-color: #dc2626; }
+.alert-modal-icon { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 14px; border-radius: 16px; color: #0369a1; background: #e0f2fe; }
+.alert-modal.warning .alert-modal-icon { color: #b45309; background: #fef3c7; }
+.alert-modal.critical .alert-modal-icon { color: #be123c; background: #ffe4e6; }
+.alert-modal > small { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.alert-modal h2 { margin: 8px 0 5px; font-size: 20px; }
+.alert-modal p { margin: 0 0 16px; color: #0369a1; font-size: 13px; font-weight: 800; }
+.alert-modal strong { display: block; color: #475569; font-size: 13px; line-height: 20px; }
+.alert-modal-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 9px; margin-top: 25px; }
 .alert-panel > header {
   display: flex;
   align-items: center;
@@ -1244,6 +1277,27 @@ button.done {
   align-items: flex-end;
   gap: 6px;
 }
+.machine-status-select {
+  display: inline-flex;
+  align-items: center;
+  color: #0369a1;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.machine-status-select > span { display: inline-flex; padding-left: 8px; pointer-events: none; }
+.machine-status-select select {
+  min-width: 112px;
+  border: 0;
+  padding: 8px 24px 8px 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  outline: none;
+}
+.machine-status-select:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px #dbeafe; }
 .view-header {
   display: flex;
   align-items: flex-start;
@@ -1314,6 +1368,50 @@ button.done {
   padding: 15px;
   min-height: 245px;
 }
+.chart-interactive-row,
+.chart-interactive-bar { cursor: pointer; transition: transform 0.16s ease, filter 0.16s ease; }
+.chart-interactive-row:hover,
+.chart-interactive-row:focus-visible { transform: translateX(3px); outline: none; }
+.chart-interactive-row:hover span i,
+.chart-interactive-row:focus-visible span i,
+.chart-interactive-bar:hover .chart-value-bar,
+.chart-interactive-bar:focus-visible .chart-value-bar { filter: brightness(0.88); }
+.chart-interactive-bar:hover,
+.chart-interactive-bar:focus-visible { transform: translateY(-3px); outline: none; }
+.chart-interactive-bar { position: relative; }
+.chart-interactive-bar:hover > span:not(.chart-tooltip),
+.chart-interactive-bar:focus-visible > span:not(.chart-tooltip) { outline: 2px solid #2563eb; outline-offset: 2px; filter: brightness(.88); }
+.revenue-bar:hover > span:not(.chart-tooltip),
+.revenue-bar:focus-visible > span:not(.chart-tooltip) { outline-color: #0284c7; }
+.orders-bar:hover > span:not(.chart-tooltip),
+.orders-bar:focus-visible > span:not(.chart-tooltip) { outline-color: #059669; }
+.peak-row:hover > span:not(.chart-tooltip) i,
+.peak-row:focus-visible > span:not(.chart-tooltip) i { outline: 2px solid #38bdf8; outline-offset: 2px; }
+.peak-row:last-child:hover > span:not(.chart-tooltip) i,
+.peak-row:last-child:focus-visible > span:not(.chart-tooltip) i { outline-color: #f59e0b; }
+.chart-interactive-row:hover,
+.chart-interactive-row:focus-visible { position: relative; }
+.chart-tooltip { position: absolute; left: 50%; bottom: calc(100% + 7px); z-index: 20; display: block; width: max-content; max-width: 180px; min-height: 0; padding: 7px 9px; border: 0; border-radius: 7px; background: #0f172a; color: #fff; font-size: 11px; font-weight: 700; line-height: 14px; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .14s ease, transform .14s ease; white-space: nowrap; }
+.chart-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; border: 5px solid transparent; border-top-color: #0f172a; transform: translateX(-50%); }
+.chart-interactive-row:hover .chart-tooltip,
+.chart-interactive-row:focus-visible .chart-tooltip,
+.chart-interactive-bar:hover .chart-tooltip,
+.chart-interactive-bar:focus-visible .chart-tooltip,
+.pie-slice:hover .chart-tooltip,
+.pie-slice:focus-within .chart-tooltip { opacity: 1; transform: translate(-50%, 0); }
+.orders-bar .chart-tooltip { background: #000; }
+.orders-bar .chart-tooltip::after { border-top-color: #000; }
+.chart-hover-target { cursor: pointer; transition: box-shadow .16s ease, transform .16s ease; }
+.chart-hover-target:hover,
+.chart-hover-target:focus-within { transform: scale(1.03); }
+.chart-hover-target:hover::before,
+.chart-hover-target:focus-within::before { content: ''; position: absolute; inset: -3px; border: 2px solid #2563eb; border-radius: 50%; pointer-events: none; }
+.chart-mini-tooltip { position: absolute; top: -30px; left: 50%; width: max-content; max-width: 180px; padding: 5px 7px; border: 1px solid #334155; border-radius: 5px; background: #0f172a; color: #fff; font-size: 10px; font-weight: 700; opacity: 0; pointer-events: none; transform: translateX(-50%); }
+.chart-hover-target:hover .chart-mini-tooltip,
+.chart-hover-target:focus-within .chart-mini-tooltip { opacity: 1; }
+.legend-hover-target { position: relative; cursor: pointer; }
+.legend-hover-target:hover .chart-mini-tooltip,
+.legend-hover-target:focus-visible .chart-mini-tooltip { opacity: 1; }
 .chart-card > b {
   color: #334155;
   font-size: 12px;
@@ -1336,7 +1434,7 @@ button.done {
   justify-content: end;
   gap: 8px;
 }
-.bar-column span {
+.bar-column > .chart-value-bar {
   width: 100%;
   min-height: 8px;
   border-radius: 5px 5px 0 0;
@@ -1361,6 +1459,19 @@ button.done {
   justify-content: space-around;
   height: 190px;
 }
+.pie-wrap { display: flex; align-items: center; justify-content: space-around; height: 190px; }
+.pie-chart { position: relative; width: 140px; height: 140px; }
+.pie-slice { position: absolute; inset: 0; cursor: pointer; }
+.pie-slice svg { width: 100%; height: 100%; overflow: visible; }
+.pie-slice path { stroke: #fff; stroke-width: 2; transition: filter .14s ease, transform .14s ease; transform-origin: 70px 70px; }
+.pie-on-time path { fill: #10b981; }
+.pie-late path { fill: #f43f5e; }
+.pie-slice:hover path, .pie-slice:focus-within path { filter: brightness(.86); stroke-width: 3; }
+.pie-on-time:hover path, .pie-on-time:focus-within path { stroke: #10b981; }
+.pie-late:hover path, .pie-late:focus-within path { stroke: #f43f5e; }
+.pie-center { position: absolute; inset: 28px; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; pointer-events: none; }
+.pie-center b { font: 900 20px Montserrat; }
+.pie-center small { color: #059669; font-size: 9px; font-weight: 800; }
 .donut {
   width: 140px;
   height: 140px;
@@ -1425,12 +1536,12 @@ button.done {
   align-items: center;
   font: 11px Montserrat;
 }
-.horizontal-bars span {
+.horizontal-bars > div > span:not(.chart-tooltip) {
   height: 11px;
-  background: #f1f5f9;
+  background: transparent;
   border-radius: 8px;
 }
-.horizontal-bars span i {
+.horizontal-bars > div > span:not(.chart-tooltip) i {
   display: block;
   height: 100%;
   border-radius: 8px;
@@ -1459,6 +1570,9 @@ button.done {
   padding: 15px 16px;
   border-top: 1px solid #f1f5f9;
 }
+.orders-table tbody tr.order-row { cursor: pointer; transition: background 0.16s ease, box-shadow 0.16s ease; }
+.orders-table tbody tr.order-row:hover,
+.orders-table tbody tr.order-row:focus-within { background: #f0f9ff; box-shadow: inset 3px 0 #0284c7; }
 .orders-table .code {
   color: #0369a1;
   font-family: Montserrat;
@@ -1659,7 +1773,7 @@ button.done {
   margin-top: 14px;
 }
 .compact-detail-modal {
-  width: min(620px, 100%);
+  width: min(700px, 100%);
 }
 .compact-detail-body {
   padding: 18px 20px;
@@ -1711,7 +1825,8 @@ button.done {
 }
 .compact-deadline strong {
   color: #0369a1;
-  font: 800 18px Montserrat;
+  font: 800 14px Montserrat;
+  line-height: 1.35;
 }
 .compact-deadline span {
   color: #059669;
@@ -1744,8 +1859,24 @@ button.done {
   color: #0369a1;
   font: 700 12px Montserrat;
 }
+.pickup-earliest-button {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #fbbf24;
+  border-radius: 7px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+.pickup-earliest-button:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
 .pickup-editor {
   display: grid;
+  width: 100%;
   justify-items: center;
   gap: 8px;
   margin-top: 2px;
@@ -1791,7 +1922,9 @@ button.done {
   font-weight: 700;
 }
 .pickup-affected-orders {
-  width: min(100%, 560px);
+  width: 100%;
+  max-width: none;
+  justify-self: stretch;
   max-height: 220px;
   overflow-y: auto;
   display: grid;
@@ -1804,30 +1937,53 @@ button.done {
   text-align: left;
 }
 .pickup-affected-orders > b {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .pickup-affected-orders > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 2px;
-  padding-top: 5px;
+  gap: 3px;
+  padding: 10px 0 3px;
   border-top: 1px solid #dbeafe;
+}
+.pickup-affected-order-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .pickup-affected-orders span {
   color: #0f172a;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
+}
+.pickup-affected-order-heading em {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+.pickup-affected-order.same_group .pickup-affected-order-heading em {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.pickup-affected-order-time,
+.pickup-affected-order-status {
+  display: block;
+  text-align: left;
 }
 .pickup-affected-orders small {
   color: #0369a1;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  text-align: right;
 }
-.pickup-affected-orders small.late {
+.pickup-affected-orders small.late,
+.pickup-affected-order-status.late {
   color: #be123c;
 }
 .compact-groups {

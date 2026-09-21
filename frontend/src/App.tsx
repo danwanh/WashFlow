@@ -12,6 +12,7 @@ import {
   type CreatedOrder,
 } from './api'
 import type { Task } from './types/task'
+import type { Alert } from './api'
 
 type Modal = 'create' | 'detail' | 'reschedule' | 'delay' | 'notify' | null
 
@@ -65,6 +66,20 @@ function App() {
       showToast()
     }
   }
+  const handleAlertAction = (alert: Alert) => {
+    openDetail({
+      id: String(alert.order_id),
+      rank: 0,
+      action: alert.type === 'FORGOTTEN_PACKING' ? 'XẾP ĐỒ' : alert.type === 'FORGOTTEN_NOTIFICATION' ? 'CHỜ GỬI TIN KHÁCH' : 'LẤY ĐỒ RA',
+      customer: `Đơn #${alert.order_id}`,
+      group: alert.batch_id ? `Mẻ #${alert.batch_id}` : 'Cảnh báo vận hành',
+      detail: alert.reason,
+      due: '',
+      tone: alert.severity === 'CRITICAL' ? 'amber' : 'amber',
+      orderId: alert.order_id,
+      batchId: alert.batch_id ?? undefined,
+    })
+  }
   return (
     <BrowserRouter>
       <AppShell
@@ -73,6 +88,7 @@ function App() {
         onOrder={() => openDetail(initialTasks[0])}
         onScenario={(type) => setModal(type)}
         onCloseToast={() => setToast(false)}
+        onAlertAction={handleAlertAction}
       >
         <AppRoutes
           onCreate={() => setModal('create')}

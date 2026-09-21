@@ -25,6 +25,7 @@ erDiagram
         VARCHAR_50 service_type
         VARCHAR_50 status
         NUMERIC_5_2 total_weight_kg
+        NUMERIC_12_2 total_amount
         TIMESTAMPTZ pickup_at
         TIMESTAMPTZ estimated_at
         INTEGER priority

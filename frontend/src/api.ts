@@ -6,6 +6,7 @@ export type OrderDraftInput = {
   items: Array<{ item_type: string; quantity: number; weight_kg: number; note?: string }>
   pickup_at: string
   priority: number
+  total_amount?: number
   special_note?: string
 }
 
@@ -37,6 +38,7 @@ export type CreatedOrder = {
   order_id: number
   customer: { name: string; phone: string }
   total_weight_kg: number
+  total_amount: number
   pickup_at: string
   batches: Array<{ batch_id: number; batch_no: number }>
 }
@@ -91,6 +93,7 @@ export type OrderSummary = {
   service_type: ServiceType
   status: string
   total_weight_kg: number
+  total_amount: number
   pickup_at: string
   estimated_at: string
   priority: number
@@ -196,6 +199,7 @@ export type PickupPreviewResponse = {
     estimated_at: string
     late: boolean
     preexisting_late?: boolean
+    relation?: 'changing' | 'same_group' | 'affected'
   }>
   unscheduled_stage_ids: number[]
   earliest_feasible_pickup: string | null

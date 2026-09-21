@@ -122,6 +122,11 @@ export async function create(req: Request, res: Response) {
       'No valid schedule meets the requested pickup time',
     )
   const b = stored.input
+  const weightKg = b.items.reduce((sum: number, x: any) => sum + Number(x.weight_kg), 0)
+  const serviceRate: Record<string, number> = { WASH: 25000, DRY: 20000, WASH_DRY: 40000 }
+  const totalAmount = Number.isFinite(Number(b.total_amount)) && Number(b.total_amount) >= 0
+    ? Number(b.total_amount)
+    : weightKg * (serviceRate[b.service_type] ?? 0)
   const created = await prisma.$transaction(async (tx) => {
     const customer = await tx.customer.create({
       data: { name: b.customer.name, phone: b.customer.phone },
@@ -131,9 +136,8 @@ export async function create(req: Request, res: Response) {
         customerId: customer.customerId,
         serviceType: b.service_type,
         status: 'RECEIVED',
-        totalWeightKg: new Prisma.Decimal(
-          b.items.reduce((sum: number, x: any) => sum + Number(x.weight_kg), 0),
-        ),
+        totalWeightKg: new Prisma.Decimal(weightKg),
+        totalAmount: new Prisma.Decimal(totalAmount),
         pickupAt: getDate(b.pickup_at, 'pickup_at'),
         estimatedAt: new Date(stored.result.estimatedAt),
         priority: Number(b.priority ?? 0),
@@ -220,6 +224,7 @@ export async function list(req: Request, res: Response) {
       service_type: o.serviceType,
       status: o.status,
       total_weight_kg: Number(o.totalWeightKg),
+      total_amount: Number(o.totalAmount),
       pickup_at: o.pickupAt.toISOString(),
       estimated_at: o.estimatedAt.toISOString(),
       priority: o.priority,
@@ -306,6 +311,12 @@ export async function pickupChange(req: Request, res: Response) {
                 : false
               return {
                 order_id: entry.orderId,
+                relation:
+                  entry.orderId === orderId
+                    ? 'changing'
+                    : schedule.changedOrderIds.includes(entry.orderId)
+                      ? 'same_group'
+                      : 'affected',
                 customer: baseline?.customer.name ?? 'Không rõ khách hàng',
                 pickup_at:
                   entry.orderId === orderId
@@ -322,15 +333,16 @@ export async function pickupChange(req: Request, res: Response) {
           affected_orders: affectedOrders,
           unscheduled_stage_ids: schedule.unscheduledStageIds,
           earliest_feasible_pickup: lateOrders.length
-            ? lateOrders
-                .map((entry: { estimatedAt: string }) =>
-                  new Date(entry.estimatedAt).getTime(),
-                )
-                .reduce(
-                  (latest: number, value: number) => Math.max(latest, value),
-                  order.estimatedAt.getTime(),
-                )
-                .toString()
+            ? new Date(
+                lateOrders
+                  .map((entry: { estimatedAt: string }) =>
+                    new Date(entry.estimatedAt).getTime(),
+                  )
+                  .reduce(
+                    (latest: number, value: number) => Math.max(latest, value),
+                    order.estimatedAt.getTime(),
+                  ),
+              ).toISOString()
             : null,
         })
       })
@@ -340,7 +352,7 @@ export async function pickupChange(req: Request, res: Response) {
         return res.json({
           ...(cause.value as object),
           earliest_feasible_pickup: value.earliest_feasible_pickup
-            ? new Date(Number(value.earliest_feasible_pickup)).toISOString()
+            ? new Date(value.earliest_feasible_pickup).toISOString()
             : null,
         })
       }

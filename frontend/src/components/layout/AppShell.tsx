@@ -2,6 +2,7 @@ import { CheckCircle2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Topbar } from './Topbar'
 import { AlertBell } from '../alerts/AlertBell'
+import type { Alert } from '../alerts/AlertBell'
 
 type AppShellProps = {
   children: ReactNode
@@ -10,6 +11,7 @@ type AppShellProps = {
   onOrder: () => void
   onScenario: (type: 'delay' | 'notify') => void
   onCloseToast: () => void
+  onAlertAction: (alert: Alert) => void
 }
 
 export function AppShell({
@@ -19,12 +21,13 @@ export function AppShell({
   onOrder,
   onScenario,
   onCloseToast,
+  onAlertAction,
 }: AppShellProps) {
   return (
     <div className="app-shell">
       <Topbar onCreate={onCreate} onOrder={onOrder} onScenario={onScenario} />
       <main className="workspace">{children}</main>
-      <AlertBell />
+      <AlertBell onAction={onAlertAction} />
       {toast && (
         <div className="toast">
           <CheckCircle2 size={30} fill="currentColor" />

@@ -63,6 +63,7 @@ export function orderResource(order: any) {
   return {
     ...order,
     total_weight_kg: Number(order.totalWeightKg),
+    total_amount: Number(order.totalAmount ?? 0),
     pickup_at: order.pickupAt.toISOString(),
     estimated_at: order.estimatedAt.toISOString(),
     created_at: order.createdAt.toISOString(),
