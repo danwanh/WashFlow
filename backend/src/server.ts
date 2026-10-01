@@ -12,11 +12,23 @@ import machines from './routes/machines.js'
 import alerts from './routes/alerts.js'
 import queue from './routes/queue.js'
 import overview from './routes/overview.js'
+import { startTicker } from './services/ticker.js'
+import { events, notifyChange } from './services/events.js'
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
+app.get('/api/events', events)
+// Tell live clients to refetch after every successful change (trial plans and scans change nothing
+// by themselves; a scan that changes alerts notifies on its own).
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && !/\/(plan|scan)\/?$/.test(req.path))
+    res.on('finish', () => {
+      if (res.statusCode < 400) notifyChange(['queue', 'alerts'])
+    })
+  next()
+})
 app.use('/api/orders', orders)
 app.use('/api/batches', batches)
 app.use('/api/machines', machines)
@@ -39,6 +51,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 })
 
 const port = Number(process.env.PORT ?? 3000)
-if (process.env.NODE_ENV !== 'test')
+if (process.env.NODE_ENV !== 'test') {
   app.listen(port, () => console.log(`WashFlow API listening on ${port}`))
+  startTicker()
+}
 export { app }

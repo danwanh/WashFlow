@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { prisma } from '../services/api.js'
-import { batchTimings, isManualStage } from '../services/timing.js'
+import { batchTimings, isManualStage, remainingWorkMs } from '../services/timing.js'
+import { autoFinishMachines } from '../services/workflow.js'
 
 const MINUTE = 60_000
 const machineLabel = (stage: string) => (stage === 'WASH' ? 'GIẶT' : 'SẤY')
@@ -15,6 +16,8 @@ const stageStatusLabel = (status: string) =>
 const minutes = (ms: number) => Math.max(0, Math.round(ms / MINUTE))
 
 export async function list(_req: Request, res: Response) {
+  // Apply machine cycles that have just elapsed so the queue never shows them still running.
+  await autoFinishMachines()
   const now = new Date()
   const readyThreshold = Number(process.env.ALERT_READY_THRESHOLD_MINUTES ?? 30)
   const orders = await prisma.laundryOrder.findMany({
@@ -86,22 +89,13 @@ export async function list(_req: Request, res: Response) {
       const pending = timings.findIndex(({ stage }) => stage.status !== 'COMPLETED')
       if (pending < 0) continue
       const { stage, timing } = timings[pending]!
-      // Work still ahead of the batch: only the unfinished part of the current stage, then
-      // the full planned length of every later stage.
-      const remainingMinutes = timings.slice(pending).reduce((sum, { stage: item }) => {
-        const duration =
-          item.plannedEndAt && item.plannedStartAt
-            ? item.plannedEndAt.getTime() - item.plannedStartAt.getTime()
-            : 0
-        if (item.status === 'MACHINE_FINISHED') return sum
-        if (item.status === 'IN_PROGRESS' && item.actualStartedAt)
-          return (
-            sum + Math.max(0, item.actualStartedAt.getTime() + duration - now.getTime()) / MINUTE
-          )
-        return sum + duration / MINUTE
-      }, 0)
+      const remaining = remainingWorkMs(
+        timings.map((item) => item.stage),
+        pending,
+        now.getTime(),
+      )
       const slackMinutes = Math.round(
-        (order.pickupAt.getTime() - now.getTime()) / MINUTE - remainingMinutes,
+        (order.pickupAt.getTime() - now.getTime() - remaining) / MINUTE,
       )
       const manual = isManualStage(stage.stage)
       const machine = stage.machine

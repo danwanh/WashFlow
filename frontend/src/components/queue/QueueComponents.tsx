@@ -2,7 +2,7 @@ import { AlertTriangle, Check, Clock, MessageCircle, PackageCheck, Tags } from '
 import type { DragEvent, ReactNode } from 'react'
 import type { QueueTask } from '../../api'
 import type { Task } from '../../types/task'
-import { formatClock, formatMinutes, liveTiming, statusClass } from '../../utils/timing'
+import { formatMinutes, liveTiming, statusClass } from '../../utils/timing'
 
 function LaundryBagIcon() {
   return (
@@ -50,9 +50,47 @@ function ActionButtonIcon({ actionType }: { actionType?: Task['actionType'] }) {
   return <Check size={15} />
 }
 
+// One short imperative line per row so staff see what to do next at a glance.
+function nextStep(task: Task) {
+  const machine = task.machineName ?? (task.stage === 'DRY' ? 'máy sấy' : 'máy giặt')
+  if (task.actionType === 'NOTIFY') return 'Gửi tin báo khách'
+  if (task.actionType === 'CLASSIFY') return 'Phân loại đồ'
+  if (task.actionType === 'PACK') return 'Xếp & đóng gói'
+  if (task.stageStatus === 'MACHINE_FINISHED') return `Lấy đồ ra · ${machine}`
+  if (task.stageStatus === 'IN_PROGRESS')
+    return `${task.stage === 'DRY' ? 'Đang sấy' : 'Đang giặt'} · ${machine}`
+  return `Cho vào ${task.stage === 'DRY' ? 'máy sấy' : 'máy giặt'}${
+    task.machineName ? ` · ${task.machineName}` : ''
+  }`
+}
+
+function buttonLabel(task: Task) {
+  if (task.actionType === 'NOTIFY') return 'Gửi tin'
+  if (task.stageStatus === 'IN_PROGRESS') return 'Máy xong'
+  if (task.stageStatus === 'MACHINE_FINISHED') return 'Đã lấy ra'
+  return 'Xong'
+}
+
+// A bag can go into a machine once its planned start has come.
+export const canDragTask = (task: Task, now: number) =>
+  task.stageStatus === 'PLANNED' &&
+  task.actionType === 'START' &&
+  (!task.plannedStartAt || new Date(task.plannedStartAt).getTime() <= now)
+
+// Rows staff can act on right now (drag into a machine or press the row's button). A running
+// machine only needs attention once its expected end has come.
+export const isActionable = (task: Task, now: number) => {
+  if (task.actionType === 'MACHINE_FINISHED') {
+    const end = task.timing?.expected_end_at
+    return !end || new Date(end).getTime() <= now
+  }
+  return canDragTask(task, now) || Boolean(task.button) || task.actionType === 'NOTIFY'
+}
+
 export function TaskCard({
   task,
   now,
+  highlighted,
   onClick,
   onComplete,
   onDragStart,
@@ -64,6 +102,7 @@ export function TaskCard({
 }: {
   task: Task
   now: number
+  highlighted?: boolean
   onClick: () => void
   onComplete: () => void
   onDragStart: () => void
@@ -73,28 +112,15 @@ export function TaskCard({
   onUnloadDragOver?: () => void
   onUnloadDrop?: () => void
 }) {
-  const canDrag =
-    task.stageStatus === 'PLANNED' &&
-    task.action.includes('VÀO MÁY') &&
-    (!task.plannedStartAt || new Date(task.plannedStartAt).getTime() <= now)
+  const canDrag = canDragTask(task, now)
   const timing = liveTiming(task.timing, now, task.stage)
   // Passed pickup is a stronger state than an ETA that is merely late.
   const due = task.dueAt ? new Date(task.dueAt).getTime() : null
   const pickupOverdue = due !== null && now > due ? Math.ceil((now - due) / 60_000) : 0
   const etaLate = pickupOverdue ? 0 : (task.orderLateMinutes ?? 0)
-  const phase = task.timing?.phase
-  const planNote = !task.stage
-    ? null
-    : phase === 'RUNNING'
-      ? `Xong dự kiến ${formatClock(task.timing?.expected_end_at)}`
-      : phase === 'WAITING_UNLOAD'
-        ? `Máy xong lúc ${formatClock(task.timing?.expected_end_at)}`
-        : task.stage === 'WASH' || task.stage === 'DRY'
-          ? `Kế hoạch ${formatClock(task.plannedStartAt)}–${formatClock(task.plannedEndAt)}`
-          : null
   return (
     <article
-      className={`task-card ${task.rank === 1 ? 'selected' : ''} ${pickupOverdue ? 'pickup-overdue' : ''} ${canAcceptUnload ? 'unload-target' : ''} ${unloadDropTarget ? 'unload-drop-target' : ''}`}
+      className={`task-card ${highlighted ? 'selected' : ''} ${pickupOverdue ? 'pickup-overdue' : ''} ${canAcceptUnload ? 'unload-target' : ''} ${unloadDropTarget ? 'unload-drop-target' : ''}`}
       onClick={onClick}
       onDragOver={(event) => {
         if (!canAcceptUnload) return
@@ -110,7 +136,7 @@ export function TaskCard({
       }}
     >
       <div className="rank">
-        {task.rank === 1 && <span>★</span>}
+        {highlighted && <span>★</span>}
         <b>{task.rank}</b>
       </div>
       <div
@@ -132,28 +158,24 @@ export function TaskCard({
         <TaskIcon actionType={task.actionType} />
       </div>
       <div className="task-info">
-        <div className="task-title">
-          <strong>{task.action}</strong>
-        </div>
+        <strong className="task-step">{nextStep(task)}</strong>
         <div className="customer">
-          {task.customer} · <b>#{task.id}</b>
+          <b>#{task.id}</b> · {task.customer}
+          {task.batchId ? <span className="task-batch"> · {task.group}</span> : null}
         </div>
-        <div className="meta">
-          {task.detail} <i>·</i> <strong>Hẹn {task.due}</strong>
-        </div>
-        {(pickupOverdue > 0 || etaLate > 0) && (
-          <div className="task-flags">
-            {pickupOverdue > 0 ? (
-              <span className="pickup-overdue-badge">
-                <AlertTriangle size={13} /> Trễ giờ hẹn {formatMinutes(pickupOverdue)}
-              </span>
-            ) : (
-              <span className="task-timing late order-late">
-                <AlertTriangle size={13} /> Nguy cơ trễ hẹn {formatMinutes(etaLate)}
-              </span>
-            )}
-          </div>
-        )}
+      </div>
+      <div className="task-due">
+        <small>Giờ hẹn</small>
+        <strong>{task.due}</strong>
+        {pickupOverdue > 0 ? (
+          <span className="pickup-overdue-badge">
+            <AlertTriangle size={12} /> Trễ {formatMinutes(pickupOverdue)}
+          </span>
+        ) : etaLate > 0 ? (
+          <span className="task-timing late order-late">
+            <AlertTriangle size={12} /> Có thể trễ {formatMinutes(etaLate)}
+          </span>
+        ) : null}
       </div>
       <div className="task-action">
         {timing && (
@@ -161,32 +183,22 @@ export function TaskCard({
             <Clock size={13} /> {timing.label}
           </div>
         )}
-        {planNote && <small className="task-plan">{planNote}</small>}
-        {task.button &&
-          (['✓  Xong', 'Xong', 'Máy xong', 'Gửi tin khách'].includes(task.button) ? (
-            <button
-              className="done"
-              onClick={(event) => {
-                event.stopPropagation()
-                onComplete()
-              }}
-            >
-              <ActionButtonIcon actionType={task.actionType} />
-              {task.actionType === 'NOTIFY'
-                ? 'Gửi tin khách'
-                : task.button === 'Máy xong'
-                  ? 'Máy xong'
-                  : 'Xong'}
-            </button>
-          ) : null)}
-        {canDrag && <small className="drag-hint">Kéo túi vào máy phù hợp</small>}
         {canAcceptUnload ? (
-          <small className="drag-hint unload-hint">Thả túi từ máy vào đây</small>
-        ) : (
-          task.stageStatus === 'MACHINE_FINISHED' && (
-            <small className="drag-hint unload-hint">Kéo túi từ máy về dòng này</small>
-          )
-        )}
+          <span className="drag-hint unload-hint">Thả túi vào đây</span>
+        ) : canDrag ? (
+          <span className="drag-hint">Kéo túi vào máy →</span>
+        ) : task.button ? (
+          <button
+            className="done"
+            onClick={(event) => {
+              event.stopPropagation()
+              onComplete()
+            }}
+          >
+            <ActionButtonIcon actionType={task.actionType} />
+            {buttonLabel(task)}
+          </button>
+        ) : null}
       </div>
     </article>
   )

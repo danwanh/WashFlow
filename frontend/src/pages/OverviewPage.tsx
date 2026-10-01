@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getOverview, type OverviewResponse } from '../api'
-import { ChartCard, Kpi, ViewHeader } from '../components/overview/OverviewComponents'
+import { ChartCard, ChartTooltip, Kpi, ViewHeader } from '../components/overview/OverviewComponents'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const formatMoney = (value: number) => value.toLocaleString('vi-VN') + 'đ'
+
+// Mark colors, kept here so tooltip keys match the bars they describe.
+const REVENUE_COLOR = '#7dd3fc'
+const PEAK_COLOR = '#38bdf8'
+const PEAK_LAST_COLOR = '#f59e0b'
+const ORDERS_COLOR = '#6ee7b7'
+const ORDERS_LAST_COLOR = '#059669'
+const ON_TIME_COLOR = '#10b981'
+const LATE_COLOR = '#f43f5e'
 
 export function OverviewPage() {
   const navigate = useNavigate()
@@ -20,6 +29,7 @@ export function OverviewPage() {
   useEffect(() => { load() }, [from, to])
   const maxPeak = Math.max(1, ...(data?.pickupPeaks.map((item) => item.value) ?? []))
   const maxDay = Math.max(1, ...(data?.ordersByDay.map((item) => item.value) ?? []))
+  const maxRevenue = Math.max(1, ...(data?.revenueByHour.map((item) => item.value) ?? []))
   return (
     <section className="view-panel">
       <ViewHeader title="Tổng quan vận hành" subtitle="" action="← Quay lại Hàng đợi" onAction={() => navigate('/queue')} />
@@ -37,31 +47,157 @@ export function OverviewPage() {
           <Kpi label="Trễ hẹn" value={`${data.kpis.lateCount} đơn`} note="Tính theo ETA và giờ hẹn" tone="red" />
         </div>
         <div className="chart-grid">
-           <ChartCard title="Doanh thu theo giờ"><div className="bar-chart revenue-bars">{data.revenueByHour.length ? data.revenueByHour.map((item) => <div className="bar-column chart-interactive-bar revenue-bar" key={item.label} tabIndex={0}><span className="chart-tooltip">{item.label}: {formatMoney(item.value)}</span><span className="chart-value-bar" style={{ height: `${item.value / Math.max(1, ...data.revenueByHour.map((entry) => entry.value)) * 100}%` }} /><small>{item.label}</small></div>) : <div className="data-state">Chưa có doanh thu.</div>}</div></ChartCard>
-           <ChartCard title="Tình trạng giờ hẹn"><AppointmentPie onTime={data.kpis.onTimeCount} late={data.kpis.lateCount} /></ChartCard>
-           <ChartCard title="Giờ cao điểm hẹn lấy đồ"><div className="horizontal-bars">{data.pickupPeaks.length ? data.pickupPeaks.map((item) => <div className="chart-interactive-row peak-row" key={item.label} tabIndex={0}><small>{item.label}</small><span><i style={{ width: `${item.value / maxPeak * 100}%` }} /></span><span className="chart-tooltip">{item.label}: {item.value} đơn</span></div>) : <div className="data-state">Không có dữ liệu.</div>}</div></ChartCard>
-           <ChartCard title="Số lượng đơn theo ngày"><div className="bar-chart green-bars">{data.ordersByDay.length ? data.ordersByDay.map((item) => <div className="bar-column chart-interactive-bar orders-bar" key={item.label} tabIndex={0}><span className="chart-tooltip">{item.label}: {item.value} đơn</span><span className="chart-value-bar" style={{ height: `${item.value / maxDay * 100}%` }} /><small>{item.label}</small></div>) : <div className="data-state">Không có dữ liệu.</div>}</div></ChartCard>
+          <ChartCard title="Doanh thu theo giờ">
+            <div className="bar-chart revenue-bars">
+              {data.revenueByHour.length ? (
+                data.revenueByHour.map((item) => (
+                  <div className="bar-column chart-interactive-bar revenue-bar" key={item.label} tabIndex={0}>
+                    <span className="chart-value-bar" style={{ height: `${(item.value / maxRevenue) * 100}%` }}>
+                      <ChartTooltip value={formatMoney(item.value)} label={item.label} color={REVENUE_COLOR} />
+                    </span>
+                    <small>{item.label}</small>
+                  </div>
+                ))
+              ) : (
+                <div className="data-state">Chưa có doanh thu.</div>
+              )}
+            </div>
+          </ChartCard>
+          <ChartCard title="Tình trạng giờ hẹn">
+            <AppointmentPie onTime={data.kpis.onTimeCount} late={data.kpis.lateCount} />
+          </ChartCard>
+          <ChartCard title="Giờ cao điểm hẹn lấy đồ">
+            <div className="horizontal-bars">
+              {data.pickupPeaks.length ? (
+                data.pickupPeaks.map((item, index) => (
+                  <div className="chart-interactive-row peak-row" key={item.label} tabIndex={0}>
+                    <small>{item.label}</small>
+                    <span>
+                      <i style={{ width: `${(item.value / maxPeak) * 100}%` }}>
+                        <ChartTooltip
+                          value={`${item.value} đơn`}
+                          label={`Hẹn lúc ${item.label}`}
+                          color={index === data.pickupPeaks.length - 1 ? PEAK_LAST_COLOR : PEAK_COLOR}
+                        />
+                      </i>
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="data-state">Không có dữ liệu.</div>
+              )}
+            </div>
+          </ChartCard>
+          <ChartCard title="Số lượng đơn theo ngày">
+            <div className="bar-chart green-bars">
+              {data.ordersByDay.length ? (
+                data.ordersByDay.map((item, index) => (
+                  <div className="bar-column chart-interactive-bar orders-bar" key={item.label} tabIndex={0}>
+                    <span className="chart-value-bar" style={{ height: `${(item.value / maxDay) * 100}%` }}>
+                      <ChartTooltip
+                        value={`${item.value} đơn`}
+                        label={item.label}
+                        color={index === data.ordersByDay.length - 1 ? ORDERS_LAST_COLOR : ORDERS_COLOR}
+                      />
+                    </span>
+                    <small>{item.label}</small>
+                  </div>
+                ))
+              ) : (
+                <div className="data-state">Không có dữ liệu.</div>
+              )}
+            </div>
+          </ChartCard>
         </div>
       </>}
     </section>
   )
 }
 
+const PIE_SIZE = 140
+const PIE_RADIUS = 66
+const PIE_CENTER = PIE_SIZE / 2
+
+// Angle 0 points up and grows clockwise.
+const piePoint = (angle: number, radius: number) => ({
+  x: PIE_CENTER + Math.sin(angle) * radius,
+  y: PIE_CENTER - Math.cos(angle) * radius,
+})
+
+function slicePath(start: number, end: number) {
+  if (end - start >= Math.PI * 2 - 1e-6) {
+    // A single 100% slice: an SVG arc cannot start and end at the same point.
+    const top = PIE_CENTER - PIE_RADIUS
+    return `M ${PIE_CENTER} ${top} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 1 ${PIE_CENTER} ${PIE_SIZE - top} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 1 ${PIE_CENTER} ${top} Z`
+  }
+  const from = piePoint(start, PIE_RADIUS)
+  const to = piePoint(end, PIE_RADIUS)
+  const largeArc = end - start > Math.PI ? 1 : 0
+  return `M ${PIE_CENTER} ${PIE_CENTER} L ${from.x} ${from.y} A ${PIE_RADIUS} ${PIE_RADIUS} 0 ${largeArc} 1 ${to.x} ${to.y} Z`
+}
+
 function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
+  const [active, setActive] = useState<string | null>(null)
   const total = onTime + late
-  const onTimeRatio = total ? onTime / total : 0
-  const angle = onTimeRatio * Math.PI * 2
-  const point = (a: number, radius: number) => ({ x: 70 + Math.cos(a - Math.PI / 2) * radius, y: 70 + Math.sin(a - Math.PI / 2) * radius })
-  const end = point(angle, 62)
-  const largeArc = angle > Math.PI ? 1 : 0
-  const onTimePath = total && onTime < total ? `M 70 70 L 70 8 A 62 62 0 ${largeArc} 1 ${end.x} ${end.y} Z` : 'M 70 70 m 0 -62 a 62 62 0 1 1 0 124 a 62 62 0 1 1 0 -124'
-  const latePath = total && onTime > 0 && late > 0 ? `M 70 70 L ${end.x} ${end.y} A 62 62 0 ${largeArc} 1 70 8 Z` : ''
-  return <div className="pie-wrap">
-    <div className="pie-chart" role="img" aria-label={`Đúng hẹn ${onTime} đơn, trễ hẹn ${late} đơn`}>
-      {onTime > 0 && <div className="pie-slice pie-on-time"><svg viewBox="0 0 140 140"><path d={onTimePath} /></svg><span className="chart-tooltip">Đúng hẹn: {onTime} đơn</span></div>}
-      {late > 0 && <div className="pie-slice pie-late"><svg viewBox="0 0 140 140"><path d={latePath || 'M 70 70 m 0 -62 a 62 62 0 1 1 0 124 a 62 62 0 1 1 0 -124'} /></svg><span className="chart-tooltip">Trễ hẹn: {late} đơn</span></div>}
-      <div className="pie-center"><b>{total ? Math.round(onTimeRatio * 100) : 0}%</b><small>ĐÚNG HẸN</small></div>
+  const onTimePercent = total ? Math.round((onTime / total) * 100) : 0
+  if (!total) return <div className="data-state">Không có dữ liệu.</div>
+  let angle = 0
+  const slices = [
+    { key: 'on-time', label: 'Đúng hẹn', value: onTime, color: ON_TIME_COLOR },
+    { key: 'late', label: 'Trễ hẹn', value: late, color: LATE_COLOR },
+  ]
+    .filter((slice) => slice.value > 0)
+    .map((slice) => {
+      const start = angle
+      angle += (slice.value / total) * Math.PI * 2
+      // Tooltip sits on the slice's mid-angle, inside the pie.
+      const anchor = piePoint((start + angle) / 2, PIE_RADIUS * 0.55)
+      return { ...slice, path: slicePath(start, angle), anchor }
+    })
+  const hovered = slices.find((slice) => slice.key === active)
+  return (
+    <div className="pie-wrap">
+      <div className="pie-chart" role="img" aria-label={`Đúng hẹn ${onTime} đơn, trễ hẹn ${late} đơn`}>
+        <svg viewBox={`0 0 ${PIE_SIZE} ${PIE_SIZE}`}>
+          {slices.map((slice) => (
+            <path
+              key={slice.key}
+              className={`pie-slice ${active === slice.key ? 'active' : ''}`}
+              d={slice.path}
+              fill={slice.color}
+              tabIndex={0}
+              aria-label={`${slice.label}: ${slice.value} đơn`}
+              onPointerEnter={() => setActive(slice.key)}
+              onPointerLeave={() => setActive(null)}
+              onFocus={() => setActive(slice.key)}
+              onBlur={() => setActive(null)}
+            />
+          ))}
+        </svg>
+        {hovered && (
+          <ChartTooltip
+            value={`${hovered.value} đơn · ${Math.round((hovered.value / total) * 100)}%`}
+            label={hovered.label}
+            color={hovered.color}
+            style={{
+              left: `${(hovered.anchor.x / PIE_SIZE) * 100}%`,
+              top: `${(hovered.anchor.y / PIE_SIZE) * 100}%`,
+              bottom: 'auto',
+              opacity: 1,
+              transform: 'translate(-50%, calc(-100% - 8px))',
+            }}
+          />
+        )}
+      </div>
+      <div className="legend">
+        <strong className="pie-headline">
+          {onTimePercent}% <small>đúng hẹn</small>
+        </strong>
+        <b><i className="green-dot" /> Đúng hẹn</b>
+        <small>{onTime} đơn</small>
+        <b><i className="red-dot" /> Trễ hẹn</b>
+        <small>{late} đơn</small>
+      </div>
     </div>
-    <div className="legend"><b><i className="green-dot" /> Đúng hẹn</b><small>{onTime} đơn</small><b><i className="red-dot" /> Trễ hẹn</b><small>{late} đơn</small></div>
-  </div>
+  )
 }

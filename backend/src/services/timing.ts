@@ -126,6 +126,18 @@ export function stageTiming(
   }
 }
 
+// Work still ahead of a batch from `stages[from]` on (stages in workflow order): only the
+// unfinished part of a running stage, then the full planned length of every later stage.
+// Shared by the queue and the rescheduler so both rank batches the same way.
+export function remainingWorkMs(stages: TimingStage[], from: number, now: number) {
+  return stages.slice(from).reduce((sum, stage) => {
+    if (stage.status === 'COMPLETED' || stage.status === 'MACHINE_FINISHED') return sum
+    if (stage.status === 'IN_PROGRESS' && stage.actualStartedAt)
+      return sum + Math.max(0, stage.actualStartedAt.getTime() + plannedDuration(stage) - now)
+    return sum + plannedDuration(stage)
+  }, 0)
+}
+
 // Timing for every stage of a batch, in workflow order.
 export function batchTimings<T extends TimingStage>(stages: T[], now: number) {
   const ordered = [...stages].sort((a, b) => stageRank(a.stage) - stageRank(b.stage))

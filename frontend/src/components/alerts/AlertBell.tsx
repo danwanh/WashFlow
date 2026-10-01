@@ -1,6 +1,6 @@
 import { Bell, Check, Clock3, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { getAlerts, resolveAlert, scanAlerts, snoozeAlert, type Alert } from '../../api'
+import { getAlerts, resolveAlert, snoozeAlert, type Alert } from '../../api'
 export type { Alert } from '../../api'
 
 const labels: Record<string, string> = {
@@ -79,7 +79,7 @@ export function AlertBell({
 
   const refresh = async () => {
     try {
-      await scanAlerts()
+      // The server scans alerts on its own timer; the client only reads them.
       const next = await getAlerts()
       setAlerts(next)
       const candidate = next.find((alert) => !shownAlerts.has(alert.alert_id))

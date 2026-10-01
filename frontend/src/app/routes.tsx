@@ -9,26 +9,17 @@ export function AppRoutes({
   onCreate,
   onDetail,
   onChanged,
-  refreshToken,
 }: {
   onCreate: () => void
   onDetail: (task: Task) => void
   onChanged: () => void
-  refreshToken: number
 }) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/queue" replace />} />
       <Route
         path="/queue"
-        element={
-          <QueuePage
-            onCreate={onCreate}
-            onDetail={onDetail}
-            onChanged={onChanged}
-            refreshToken={refreshToken}
-          />
-        }
+        element={<QueuePage onCreate={onCreate} onDetail={onDetail} onChanged={onChanged} />}
       />
       <Route path="/overview" element={<OverviewPage />} />
       <Route path="/orders" element={<OrdersPage onCreate={onCreate} onOpen={onDetail} />} />

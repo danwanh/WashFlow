@@ -5,6 +5,7 @@ import {
 } from './alerts.js'
 import { rescheduleAll } from './rescheduler.js'
 import { isManualStage, stageRank } from './timing.js'
+import { notifyChange } from './events.js'
 
 const stageOrder = stageRank
 
@@ -74,10 +75,14 @@ export async function updateStage(
     await prisma.$transaction([
       prisma.batchStage.update({
         where: { batchStageId: stageId },
+        // Re-anchor the plan on the real start and the chosen machine's cycle length, so
+        // timing and the rescheduler know when this machine actually frees up.
         data: {
           machineId: machine.machineId,
           status: 'IN_PROGRESS',
           actualStartedAt: now,
+          plannedStartAt: now,
+          plannedEndAt: new Date(now.getTime() + machine.processingMinutes * 60_000),
         },
       }),
       prisma.machine.update({
@@ -95,17 +100,7 @@ export async function updateStage(
   } else if (action === 'finished') {
     if (current.status !== 'IN_PROGRESS')
       fail(400, 'INVALID_STATE', 'Stage is not in progress')
-    await prisma.$transaction([
-      prisma.batchStage.update({
-        where: { batchStageId: stageId },
-        data: { status: 'MACHINE_FINISHED', actualMachineFinishedAt: now },
-      }),
-      prisma.orderBatch.update({
-        where: { batchId },
-        data: { status: 'WAITING_FOR_UNLOAD' },
-      }),
-    ])
-    await recordMachineFinishedAlert(batch.orderId, batch.batchId, now)
+    await finishMachineStage(stageId, batchId, batch.orderId, now)
   } else {
     if (current.status !== 'MACHINE_FINISHED' || !current.machineId)
       fail(400, 'INVALID_STATE', 'Stage is not waiting for unload')
@@ -130,8 +125,65 @@ export async function updateStage(
     await resolveMachineFinishedAlert(batch.orderId, batch.batchId, now)
     await syncOrderStatus(batch.orderId, now)
   }
-  if (action === 'unload') await rescheduleAll('STAGE_UNLOADED')
+  await rescheduleAll(
+    action === 'start'
+      ? 'STAGE_STARTED'
+      : action === 'finished'
+        ? 'MACHINE_FINISHED'
+        : 'STAGE_UNLOADED',
+  )
   return getOrder(batch.orderId)
+}
+
+// Moves a running machine stage to MACHINE_FINISHED. The update only applies while the stage
+// is still IN_PROGRESS, so a manual "Máy xong" and the automatic check never both apply it.
+async function finishMachineStage(
+  stageId: number,
+  batchId: number,
+  orderId: number,
+  finishedAt: Date,
+) {
+  const finished = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.batchStage.updateMany({
+      where: { batchStageId: stageId, status: 'IN_PROGRESS' },
+      data: { status: 'MACHINE_FINISHED', actualMachineFinishedAt: finishedAt },
+    })
+    if (count)
+      await tx.orderBatch.update({
+        where: { batchId },
+        data: { status: 'WAITING_FOR_UNLOAD' },
+      })
+    return count > 0
+  })
+  if (finished) await recordMachineFinishedAlert(orderId, batchId, finishedAt)
+  return finished
+}
+
+// Machines finish on their own: every running WASH/DRY stage whose cycle has elapsed
+// (actual start + planned length, the same end the queue counts down to) is marked
+// MACHINE_FINISHED at that end time. Staff still confirm the unload.
+export async function autoFinishMachines(now = new Date()) {
+  const running = await prisma.batchStage.findMany({
+    where: { status: 'IN_PROGRESS', stage: { in: ['WASH', 'DRY'] } },
+    include: { batch: { select: { orderId: true } } },
+  })
+  let finished = 0
+  for (const stage of running) {
+    if (!stage.actualStartedAt || !stage.plannedStartAt || !stage.plannedEndAt) continue
+    const end =
+      stage.actualStartedAt.getTime() +
+      Math.max(0, stage.plannedEndAt.getTime() - stage.plannedStartAt.getTime())
+    if (end > now.getTime()) continue
+    if (
+      await finishMachineStage(stage.batchStageId, stage.batchId, stage.batch.orderId, new Date(end))
+    )
+      finished += 1
+  }
+  if (finished) {
+    await rescheduleAll('MACHINE_FINISHED')
+    notifyChange(['queue', 'alerts'])
+  }
+  return finished
 }
 
 // The order status follows its batch stages: every sorting done -> WAITING,

@@ -18,6 +18,7 @@ export type Task = {
   batchStageId?: number | null
   stageStatus?: string
   machineId?: number | null
+  machineName?: string | null
   machineType?: 'WASHER' | 'DRYER'
   slackMinutes?: number | null
   weightKg?: number | null

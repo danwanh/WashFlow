@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getQueue } from '../api'
+import { useQueue } from './useQueue'
 import { diffQueue, snapshotQueue, type Notice, type QueueSnapshot } from '../utils/statusDiff'
 
-const POLL_MS = 5_000
 const NOTICE_MS = 6_000
 const MAX_NOTICES = 4
 
-// Polls the queue and turns real order/stage status changes into notices.
-// `refresh()` checks right away (after the user acts) instead of waiting for the next poll.
+// Watches the shared queue data and turns real order/stage status changes into notices.
+// `refresh()` refetches right away (after the user acts) instead of waiting for a server event.
 export function useStatusFeed() {
   const [notices, setNotices] = useState<Notice[]>([])
-  const [taskCount, setTaskCount] = useState<number | null>(null)
+  const { data: queue, refetch } = useQueue()
   const previous = useRef<QueueSnapshot | null>(null)
-  const pending = useRef<Promise<void>>(Promise.resolve())
   const nextId = useRef(1)
 
   const dismiss = useCallback((id: number) => {
@@ -30,28 +28,18 @@ export function useStatusFeed() {
     [dismiss],
   )
 
-  const refresh = useCallback(() => {
-    // Serialize polls so two overlapping responses never report the same change twice.
-    pending.current = pending.current.then(async () => {
-      try {
-        const queue = await getQueue()
-        const snapshot = snapshotQueue(queue)
-        setTaskCount(queue.count)
-        const changes = previous.current ? diffQueue(previous.current, snapshot) : []
-        previous.current = snapshot
-        for (const change of changes.reverse()) push(change)
-      } catch {
-        // Pages show their own load errors; a failed poll just waits for the next one.
-      }
-    })
-    return pending.current
-  }, [push])
-
+  // Report what changed whenever the shared queue data changes.
   useEffect(() => {
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(timer)
-  }, [refresh])
+    if (!queue) return
+    const snapshot = snapshotQueue(queue)
+    const changes = previous.current ? diffQueue(previous.current, snapshot) : []
+    previous.current = snapshot
+    for (const change of changes.reverse()) push(change)
+  }, [queue, push])
 
-  return { notices, dismiss, clearAll, refresh, push, taskCount }
+  const refresh = useCallback(async () => {
+    await refetch()
+  }, [refetch])
+
+  return { notices, dismiss, clearAll, refresh, push, taskCount: queue?.count ?? null }
 }

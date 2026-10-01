@@ -235,7 +235,7 @@ export type PickupPreviewResponse = {
   earliest_feasible_pickup: string | null
 }
 
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
+export const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   let response: Response

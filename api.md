@@ -320,16 +320,27 @@ Preconditions:
 
 On success, the stage becomes `IN_PROGRESS`, `actual_started_at` is set, the
 batch becomes `WASHING` or `DRYING`, and the machine becomes `BUSY`. The
-assignment is locked and non-preemptive.
+stage's planned window is re-anchored to the real start
+(`planned_start_at` = now, `planned_end_at` = now + the chosen machine's
+`processing_minutes`). The assignment is locked and non-preemptive. All open
+orders are then rescheduled (`STAGE_STARTED`).
 
 ### Mark machine cycle finished / complete sorting or packing
 
 `POST /api/batches/:batchId/stages/:stageId/machine-finished`
 
+Machine stages also finish automatically: once `actual_started_at` plus the
+stage's planned length has passed, the server applies the same change with
+`actual_machine_finished_at` set to that end time. The check runs on the server
+timer (`TICK_INTERVAL_SECONDS`) and at the start of every `GET /api/queue`.
+Calling this endpoint finishes a cycle early.
+
 For an `IN_PROGRESS` `WASH`/`DRY` stage: sets `actual_machine_finished_at`,
 changes the stage to `MACHINE_FINISHED`, changes the batch to
 `WAITING_FOR_UNLOAD`, and opens a `MACHINE_FINISHED` alert. The machine remains
-`BUSY` until unload is confirmed.
+`BUSY` until unload is confirmed; the rescheduler expects it to be free again
+`ALERT_UNLOAD_THRESHOLD_MINUTES` after the cycle finished. All open orders are
+then rescheduled (`MACHINE_FINISHED`).
 
 For a `PLANNED` `CLASSIFY` or `PACKING` stage: completes it
 (`actual_ended_at` = now). The batch moves to `WAITING` on its next stage, or
@@ -423,8 +434,9 @@ opened and resolved by the stage endpoints. The rest are created by a scan.
 `POST /api/alerts/scan`
 
 Opens, refreshes, or resolves alerts for all open orders and returns
-`{ scannedAt, changed }`. Nothing runs on a timer, so the client calls this
-endpoint. Thresholds in minutes come from environment variables:
+`{ scannedAt, changed }`. The server also runs this scan on its own timer
+(every `TICK_INTERVAL_SECONDS`, default 30; `0` disables it), so clients only
+need to read `GET /api/alerts`. Thresholds in minutes come from environment variables:
 
 | Alert | Condition | Threshold env (default) |
 |---|---|---|
@@ -463,8 +475,9 @@ Returns `{ now, count, tasks, machines }` for every order that is not
 `PACK`. A `READY` order contributes one order-level `NOTIFY` task
 (`batch_id: null`). Action and detail labels are in Vietnamese.
 
-Tasks are sorted by `slack_minutes` (pickup time minus now minus the remaining
-planned machine time), then priority (highest first), pickup time, and order
+Tasks are sorted by `slack_minutes` (pickup time minus now minus the batch's
+remaining work: the unfinished part of a running stage plus the planned length
+of every later stage; the rescheduler ranks stages by the same slack), then priority (highest first), pickup time, and order
 id. `rank` is the position in that order. Machine-stage tasks include timing
 fields: `timing_status` (`ON_TIME`, `APPROACHING`, `LATE`,
 `COMPLETED_ON_TIME`, `COMPLETED_LATE`), `delay_minutes`, `remaining_minutes`,

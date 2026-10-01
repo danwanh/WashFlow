@@ -8,6 +8,7 @@ import {
 } from './components/modals/ModalComponents'
 import { AppRoutes } from './app/routes'
 import { sendReadyNotification, updateStage } from './api'
+import { useLiveUpdates } from './hooks/useLiveUpdates'
 import { useStatusFeed } from './hooks/useStatusFeed'
 import type { Task } from './types/task'
 import type { Alert } from './api'
@@ -17,11 +18,10 @@ type Modal = 'create' | 'detail' | null
 function App() {
   const [selected, setSelected] = useState<Task | null>(null)
   const [modal, setModal] = useState<Modal>(null)
-  const [queueRefresh, setQueueRefresh] = useState(0)
   const feed = useStatusFeed()
-  // After any change: reload the queue page and report what actually changed.
+  useLiveUpdates()
+  // After any change: refetch the shared queue; the feed reports what actually changed.
   const afterChange = () => {
-    setQueueRefresh((value) => value + 1)
     void feed.refresh()
   }
   const openDetail = (task: Task) => {
@@ -77,7 +77,6 @@ function App() {
           onCreate={() => setModal('create')}
           onDetail={openDetail}
           onChanged={afterChange}
-          refreshToken={queueRefresh}
         />
       </AppShell>
       {modal === 'detail' && selected && (

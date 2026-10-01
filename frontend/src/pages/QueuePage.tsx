@@ -1,25 +1,25 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { MachinePane, TaskCard } from '../components/queue/QueueComponents'
+import { MachinePane, TaskCard, isActionable } from '../components/queue/QueueComponents'
 import { ConfirmActionModal, NotificationModal } from '../components/modals/ModalComponents'
-import { getQueue, sendReadyNotification, updateStage, type QueueResponse } from '../api'
+import { sendReadyNotification, updateStage } from '../api'
+import { useQueue } from '../hooks/useQueue'
 import type { Task } from '../types/task'
 
 export function QueuePage({
   onCreate,
   onDetail,
   onChanged,
-  refreshToken,
 }: {
   onCreate: () => void
   onDetail: (task: Task) => void
   onChanged: () => void
-  refreshToken: number
 }) {
   const [filter, setFilter] = useState('all')
   const [dragging, setDragging] = useState<Task | null>(null)
   const [target, setTarget] = useState<string | null>(null)
-  const [queue, setQueue] = useState<QueueResponse | null>(null)
+  const queueQuery = useQueue()
+  const queue = queueQuery.data ?? null
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState<Task | null>(null)
   const [notifying, setNotifying] = useState<Task | null>(null)
@@ -27,23 +27,29 @@ export function QueuePage({
   const [machineWidth, setMachineWidth] = useState(20)
   const [resizing, setResizing] = useState(false)
   const resizeHandle = useRef<HTMLDivElement>(null)
-  const load = () =>
-    getQueue()
-      .then((result) => {
-        setError('')
-        return result
-      })
-      .then(setQueue)
-      .catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tải hàng đợi'))
-  useEffect(() => {
-    void load()
-    const timer = window.setInterval(() => void load(), 5_000)
-    return () => window.clearInterval(timer)
-  }, [refreshToken])
+  const load = () => queueQuery.refetch()
+  const loadError = queueQuery.error
+    ? queueQuery.error instanceof Error
+      ? queueQuery.error.message
+      : 'Không thể tải hàng đợi'
+    : ''
+  // A fresh queue replaces the message of an earlier failed action.
+  useEffect(() => setError(''), [queueQuery.dataUpdatedAt])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+  // Machines finish on their own on the server: reload right when the next cycle ends
+  // instead of waiting for the next poll.
+  useEffect(() => {
+    const ends = (queue?.tasks ?? [])
+      .filter((task) => task.action_type === 'MACHINE_FINISHED' && task.expected_end_at)
+      .map((task) => new Date(task.expected_end_at!).getTime())
+      .filter((end) => end > Date.now())
+    if (!ends.length) return
+    const timer = window.setTimeout(() => void load(), Math.min(...ends) - Date.now() + 1000)
+    return () => window.clearTimeout(timer)
+  }, [queue])
   const tasks: Task[] = (queue?.tasks ?? []).map((task) => ({
     id: String(task.order_id),
     rank: task.rank,
@@ -69,6 +75,7 @@ export function QueuePage({
     batchStageId: task.batch_stage_id,
     stageStatus: task.stage_status ?? undefined,
     machineId: task.machine_id,
+    machineName: task.machine_name,
     machineType: task.machine_type,
     slackMinutes: task.slack_minutes,
     weightKg: task.weight_kg,
@@ -93,6 +100,8 @@ export function QueuePage({
           task.actionType === 'START' ||
           task.actionType === 'PACK')),
   )
+  // The star marks the highest-ranked row staff can act on now, not a row that is only waiting.
+  const firstActionable = visible.find((task) => isActionable(task, now))
   const complete = async (task: Task, notificationContent?: string) => {
     try {
       if (task.batchId && task.batchStageId) {
@@ -120,7 +129,7 @@ export function QueuePage({
       )
   }
   const requestComplete = (task: Task) => {
-    if (task.action === 'CHỜ GỬI TIN KHÁCH') setNotifying(task)
+    if (task.actionType === 'NOTIFY') setNotifying(task)
     else setConfirming(task)
   }
   const confirmComplete = async () => {
@@ -189,8 +198,9 @@ export function QueuePage({
         <div className="task-list">
           {visible.map((task) => (
             <TaskCard
-              key={`${task.id}-${task.rank}`}
+              key={task.batchStageId ?? `notify-${task.orderId}`}
               task={task}
+              highlighted={task === firstActionable}
               onClick={() => onDetail(task)}
               now={now}
               onComplete={() => requestComplete(task)}
@@ -212,7 +222,7 @@ export function QueuePage({
             />
           ))}
         </div>
-        {error && <p className="queue-error">{error}</p>}
+        {(error || loadError) && <p className="queue-error">{error || loadError}</p>}
         {queue && visible.length === 0 && (
           <div className="queue-empty">Không có công việc phù hợp với bộ lọc.</div>
         )}

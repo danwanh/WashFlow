@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { fail, getId, prisma } from "../services/api.js";
 import { scanAlerts } from "../services/alerts.js";
+import { notifyChange } from "../services/events.js";
 export async function list(req: Request, res: Response) {
   const q = req.query;
   const alerts = await prisma.alert.findMany({
@@ -36,7 +37,9 @@ export async function list(req: Request, res: Response) {
 }
 
 export async function scan(_req: Request, res: Response) {
-  res.json(await scanAlerts());
+  const result = await scanAlerts();
+  if (result.changed.length) notifyChange(["alerts"]);
+  res.json(result);
 }
 export async function snooze(req: Request, res: Response) {
   const alert = await prisma.alert

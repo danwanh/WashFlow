@@ -1,6 +1,11 @@
 import { prisma } from './api.js'
 import type { Prisma } from '../../generated/prisma/client.js'
-import { isManualStage, stageRank } from './timing.js'
+import {
+  isManualStage,
+  remainingWorkMs,
+  stageRank,
+  timingThresholds,
+} from './timing.js'
 
 type Reason = string
 const stageOrder = stageRank
@@ -23,6 +28,7 @@ export async function rescheduleWithClient(
   reason: Reason,
 ) {
   const now = new Date()
+  const unloadMs = timingThresholds().unloadThresholdMinutes * 60_000
   const [orders, machines] = await Promise.all([
     tx.laundryOrder.findMany({
       where: { status: { not: 'COMPLETED' } },
@@ -56,12 +62,13 @@ export async function rescheduleWithClient(
         ) {
           lockedStageIds.push(stage.batchStageId)
           if (stage.machineId) {
-            availability.set(
-              stage.machineId,
+            // A running machine frees up at its planned end (set when it started); a finished
+            // one is expected to be unloaded within the unload threshold. Never in the past.
+            const freeAt =
               stage.status === 'MACHINE_FINISHED'
-                ? Number.POSITIVE_INFINITY
-                : (stage.plannedEndAt?.getTime() ?? Number.POSITIVE_INFINITY),
-            )
+                ? (stage.actualMachineFinishedAt ?? now).getTime() + unloadMs
+                : (stage.plannedEndAt?.getTime() ?? Number.POSITIVE_INFINITY)
+            availability.set(stage.machineId, Math.max(now.getTime(), freeAt))
           }
         } else if (stage.status === 'COMPLETED' && stage.machineId) {
           availability.set(
@@ -107,13 +114,19 @@ export async function rescheduleWithClient(
     })
     if (!eligible.length) break
     eligible.sort((a, b) => {
+      // Same slack as the work queue: pickup minus now minus the batch's remaining work.
       const slack = (entry: typeof a) => {
-        const duration =
-          entry.stage.plannedEndAt && entry.stage.plannedStartAt
-            ? entry.stage.plannedEndAt.getTime() -
-              entry.stage.plannedStartAt.getTime()
-            : 0
-        return entry.order.pickupAt.getTime() - now.getTime() - duration
+        const stages = [...entry.batch.stages].sort(
+          (x, y) => stageOrder(x.stage) - stageOrder(y.stage),
+        )
+        const from = stages.findIndex(
+          (item) => item.batchStageId === entry.stage.batchStageId,
+        )
+        return (
+          entry.order.pickupAt.getTime() -
+          now.getTime() -
+          remainingWorkMs(stages, from, now.getTime())
+        )
       }
       return (
         slack(a) - slack(b) ||

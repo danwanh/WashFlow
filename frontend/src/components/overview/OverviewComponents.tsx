@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 export function ViewHeader({
   title,
   subtitle,
@@ -49,5 +49,28 @@ export function ChartCard({ title, children }: { title: string; children: ReactN
       <b>{title}</b>
       {children}
     </section>
+  )
+}
+// Shared hover/focus readout for every overview chart: value first, label second,
+// keyed with a short stroke of the mark's color.
+export function ChartTooltip({
+  value,
+  label,
+  color,
+  style,
+}: {
+  value: string
+  label: string
+  color: string
+  style?: CSSProperties
+}) {
+  return (
+    <div className="chart-tooltip" role="tooltip" style={style}>
+      <b>{value}</b>
+      <small>
+        <em className="chart-tooltip-key" style={{ background: color }} />
+        {label}
+      </small>
+    </div>
   )
 }

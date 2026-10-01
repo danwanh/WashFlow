@@ -594,9 +594,9 @@ button {
 }
 .drag-hint {
   display: block;
-  margin-top: 6px;
+  margin-top: 2px;
   color: #0369a1;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -615,6 +615,53 @@ button {
   color: #d97706;
   margin-left: 6px;
 }
+.task-step {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.3;
+}
+.task-info .customer {
+  margin-top: 10px;
+  font-size: 15px;
+}
+.task-batch {
+  color: #94a3b8;
+  font-weight: 500;
+}
+.task-due {
+  /* Fixed column so pickup times line up across rows. */
+  flex: 0 0 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-left: 20px;
+  border-left: 1px solid #e2e8f0;
+}
+.task-due small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.task-due strong {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 800;
+}
+.task-due .task-timing.order-late,
+.task-due .pickup-overdue-badge {
+  margin-top: 2px;
+  font-size: 12px;
+  white-space: nowrap;
+}
 .task-action {
   /* Fixed column so titles line up across rows. */
   flex: 0 0 240px;
@@ -622,10 +669,11 @@ button {
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
-  gap: 6px;
+  gap: 10px;
 }
 .task-action .task-timing {
   margin-top: 0;
+  font-size: 14px;
   white-space: nowrap;
 }
 .task-info {
@@ -1567,12 +1615,6 @@ button.done {
   transform: translateX(3px);
   outline: none;
 }
-.chart-interactive-row:hover span i,
-.chart-interactive-row:focus-visible span i,
-.chart-interactive-bar:hover .chart-value-bar,
-.chart-interactive-bar:focus-visible .chart-value-bar {
-  filter: brightness(0.88);
-}
 .chart-interactive-bar:hover,
 .chart-interactive-bar:focus-visible {
   transform: translateY(-3px);
@@ -1581,50 +1623,39 @@ button.done {
 .chart-interactive-bar {
   position: relative;
 }
-.chart-interactive-bar:hover > span:not(.chart-tooltip),
-.chart-interactive-bar:focus-visible > span:not(.chart-tooltip) {
-  outline: 2px solid #2563eb;
+/* Hovered mark gets an outline (not a filter, which would also tint its tooltip). */
+.chart-interactive-bar:hover > .chart-value-bar,
+.chart-interactive-bar:focus-visible > .chart-value-bar,
+.chart-interactive-row:hover span i,
+.chart-interactive-row:focus-visible span i {
+  outline: 2px solid #0f172a33;
   outline-offset: 2px;
-  filter: brightness(0.88);
-}
-.revenue-bar:hover > span:not(.chart-tooltip),
-.revenue-bar:focus-visible > span:not(.chart-tooltip) {
-  outline-color: #0284c7;
-}
-.orders-bar:hover > span:not(.chart-tooltip),
-.orders-bar:focus-visible > span:not(.chart-tooltip) {
-  outline-color: #059669;
-}
-.peak-row:hover > span:not(.chart-tooltip) i,
-.peak-row:focus-visible > span:not(.chart-tooltip) i {
-  outline: 2px solid #38bdf8;
-  outline-offset: 2px;
-}
-.peak-row:last-child:hover > span:not(.chart-tooltip) i,
-.peak-row:last-child:focus-visible > span:not(.chart-tooltip) i {
-  outline-color: #f59e0b;
 }
 .chart-interactive-row:hover,
 .chart-interactive-row:focus-visible {
   position: relative;
 }
+.chart-value-bar,
+.horizontal-bars > div > span:not(.chart-tooltip) i {
+  position: relative;
+}
+/* One tooltip style for every chart: sits above the hovered mark, value first. */
 .chart-tooltip {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 7px);
+  bottom: calc(100% + 8px);
   z-index: 20;
-  display: block;
+  display: grid;
+  gap: 2px;
   width: max-content;
-  max-width: 180px;
-  min-height: 0;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 7px;
+  max-width: 200px;
+  padding: 7px 10px;
+  border-radius: 8px;
   background: #0f172a;
+  box-shadow: 0 6px 16px #0f172a33;
   color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 14px;
+  text-align: left;
+  line-height: 1.25;
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 4px);
@@ -1642,20 +1673,30 @@ button.done {
   border-top-color: #0f172a;
   transform: translateX(-50%);
 }
+.chart-tooltip b {
+  font-size: 13px;
+  font-weight: 800;
+}
+.chart-tooltip small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+}
+.chart-tooltip-key {
+  display: block;
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
 .chart-interactive-row:hover .chart-tooltip,
 .chart-interactive-row:focus-visible .chart-tooltip,
 .chart-interactive-bar:hover .chart-tooltip,
-.chart-interactive-bar:focus-visible .chart-tooltip,
-.pie-slice:hover .chart-tooltip,
-.pie-slice:focus-within .chart-tooltip {
+.chart-interactive-bar:focus-visible .chart-tooltip {
   opacity: 1;
   transform: translate(-50%, 0);
-}
-.orders-bar .chart-tooltip {
-  background: #000;
-}
-.orders-bar .chart-tooltip::after {
-  border-top-color: #000;
 }
 .chart-hover-target {
   cursor: pointer;
@@ -1763,62 +1804,34 @@ button.done {
   width: 140px;
   height: 140px;
 }
-.pie-slice {
-  position: absolute;
-  inset: 0;
-  cursor: pointer;
-}
-.pie-slice svg {
+.pie-chart svg {
+  display: block;
   width: 100%;
   height: 100%;
   overflow: visible;
 }
-.pie-slice path {
+.pie-slice {
+  /* 2px surface gap between slices. */
   stroke: #fff;
   stroke-width: 2;
-  transition:
-    filter 0.14s ease,
-    transform 0.14s ease;
-  transform-origin: 70px 70px;
+  stroke-linejoin: round;
+  cursor: pointer;
+  outline: none;
+  transition: opacity 0.14s ease;
 }
-.pie-on-time path {
-  fill: #10b981;
+.pie-chart svg:hover .pie-slice:not(.active),
+.pie-chart svg:focus-within .pie-slice:not(.active) {
+  opacity: 0.45;
 }
-.pie-late path {
-  fill: #f43f5e;
+.pie-headline {
+  margin-bottom: 6px;
+  color: #0f172a;
+  font: 900 22px Montserrat;
 }
-.pie-slice:hover path,
-.pie-slice:focus-within path {
-  filter: brightness(0.86);
-  stroke-width: 3;
-}
-.pie-on-time:hover path,
-.pie-on-time:focus-within path {
-  stroke: #10b981;
-}
-.pie-late:hover path,
-.pie-late:focus-within path {
-  stroke: #f43f5e;
-}
-.pie-center {
-  position: absolute;
-  inset: 28px;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #fff;
-  pointer-events: none;
-}
-.pie-center b {
-  font: 900 20px Montserrat;
-}
-.pie-center small {
-  color: #059669;
-  font-size: 9px;
-  font-weight: 800;
+.pie-headline small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
 }
 .donut {
   width: 140px;
