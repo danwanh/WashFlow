@@ -79,14 +79,9 @@ export async function list(_req: Request, res: Response) {
         actual_machine_finished_at: null,
       })
     }
-    if (order.status === 'RECEIVED')
-      addOrderTask('PHÂN LOẠI', 'CLASSIFY', 'Xong', 'Xác nhận các mẻ đồ')
-    if (order.status === 'FOLDING_PACKING')
-      addOrderTask('XẾP ĐỒ', 'PACK', 'Xong', 'Đóng gói toàn bộ đơn')
+    // CLASSIFY and PACKING are per-batch stages; only the final notification is order-level.
     if (order.status === 'READY')
       addOrderTask('CHỜ GỬI TIN KHÁCH', 'NOTIFY', 'Gửi tin khách', 'Đơn đã sẵn sàng')
-
-    if (order.status === 'RECEIVED') continue
     for (const batch of order.batches) {
       const stages = [...batch.stages].sort(
         (a, b) => stageRank(a.stage) - stageRank(b.stage),
@@ -98,12 +93,6 @@ export async function list(_req: Request, res: Response) {
       )
       if (pending < 0) continue
       const stage = stages[pending]!
-      if (stage.stage === 'CLASSIFY' || stage.stage === 'PACKING') {
-        const duplicate = tasks.some(
-          (task) => task.order_id === order.orderId && task.action_type === (stage.stage === 'CLASSIFY' ? 'CLASSIFY' : 'PACK'),
-        )
-        if (duplicate) continue
-      }
       const remainingMinutes = stages
         .slice(pending)
         .reduce(

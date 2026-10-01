@@ -160,11 +160,6 @@ button {
   font-size: 12px;
   font-weight: 700;
 }
-.scenario-bar .selected-scenario {
-  background: #0284c7;
-  color: white;
-  border-color: #0284c7;
-}
 .scenario-bar .amber-action {
   color: #b45309;
   border-color: #fcd34d;

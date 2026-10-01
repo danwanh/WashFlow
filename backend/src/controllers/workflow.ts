@@ -6,11 +6,7 @@ import {
   getOrder,
   orderResource,
 } from '../services/api.js'
-import {
-  completePacking,
-  sendNotification,
-  updateStage,
-} from '../services/workflow.js'
+import { sendNotification, updateStage } from '../services/workflow.js'
 
 export async function stage(req: Request, res: Response) {
   const action = req.path.endsWith('/start')
@@ -26,10 +22,6 @@ export async function stage(req: Request, res: Response) {
     requestedMachineId === undefined ? undefined : Number(requestedMachineId),
   )
   res.json(orderResource(order))
-}
-
-export async function packing(req: Request, res: Response) {
-  res.json(orderResource(await completePacking(getId(req.params.orderId))))
 }
 
 export async function draft(req: Request, res: Response) {

@@ -3,11 +3,10 @@ import { NavLink } from 'react-router-dom'
 
 type TopbarProps = {
   onCreate: () => void
-  onOrder: () => void
   onScenario: (type: 'delay' | 'notify') => void
 }
 
-export function Topbar({ onCreate, onOrder, onScenario }: TopbarProps) {
+export function Topbar({ onCreate, onScenario }: TopbarProps) {
   const links = [
     { to: '/queue', label: 'Hàng đợi', icon: <ListFilter size={14} />, count: '5' },
     { to: '/overview', label: 'Tổng quan', icon: <BarChart3 size={14} /> },
@@ -44,11 +43,6 @@ export function Topbar({ onCreate, onOrder, onScenario }: TopbarProps) {
           + Tạo đơn
           <br />
           (Chia nhóm)
-        </button>
-        <button className="selected-scenario" onClick={onOrder}>
-          ◉ Đơn #123
-          <br />
-          (2 nhóm)
         </button>
         <button className="amber-action" onClick={() => onScenario('delay')}>
           ⚡ Demo 1<br />

@@ -188,6 +188,7 @@ export async function scanAlerts(now = new Date()) {
           reason: "Mẻ đồ đang chờ vào máy quá lâu",
           active:
             batch.status === "WAITING" &&
+            ["WASH", "DRY"].includes(batch.currentStage ?? "") &&
             ageExceeded(waitingSince, config.waiting, now),
           now,
         });
@@ -211,14 +212,15 @@ export async function scanAlerts(now = new Date()) {
         if (unloadAlert) changed.push(unloadAlert);
       }
 
-      const lastCompletedAt = order.batches.reduce<Date | null>(
-        (latest, batch) => {
-          if (!batch.completedAt || (latest && latest >= batch.completedAt))
+      // Packing becomes due once the last machine stage has been unloaded.
+      const lastCompletedAt = order.batches
+        .flatMap((batch) => batch.stages)
+        .filter((stage) => stage.stage === "WASH" || stage.stage === "DRY")
+        .reduce<Date | null>((latest, stage) => {
+          if (!stage.actualEndedAt || (latest && latest >= stage.actualEndedAt))
             return latest;
-          return batch.completedAt;
-        },
-        null,
-      );
+          return stage.actualEndedAt;
+        }, null);
       const packingAlert = await syncAlert(tx, {
         orderId: order.orderId,
         type: "FORGOTTEN_PACKING",

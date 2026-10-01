@@ -339,14 +339,6 @@ export function updateStage(
   })
 }
 
-export function confirmClassification(orderId: number) {
-  return request(`/orders/${orderId}/classification`, { method: 'POST', body: JSON.stringify({}) })
-}
-
-export function completePacking(orderId: number) {
-  return request(`/orders/${orderId}/packing`, { method: 'POST', body: JSON.stringify({}) })
-}
-
 export function draftReadyNotification(orderId: number) {
   return request<{ type: string; channel: string; content: string }>(
     `/orders/${orderId}/notifications/draft`,

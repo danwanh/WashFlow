@@ -8,7 +8,6 @@ type AppShellProps = {
   children: ReactNode
   toast: boolean
   onCreate: () => void
-  onOrder: () => void
   onScenario: (type: 'delay' | 'notify') => void
   onCloseToast: () => void
   onAlertAction: (alert: Alert) => void
@@ -18,14 +17,13 @@ export function AppShell({
   children,
   toast,
   onCreate,
-  onOrder,
   onScenario,
   onCloseToast,
   onAlertAction,
 }: AppShellProps) {
   return (
     <div className="app-shell">
-      <Topbar onCreate={onCreate} onOrder={onOrder} onScenario={onScenario} />
+      <Topbar onCreate={onCreate} onScenario={onScenario} />
       <main className="workspace">{children}</main>
       <AlertBell onAction={onAlertAction} />
       {toast && (

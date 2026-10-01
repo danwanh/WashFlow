@@ -42,6 +42,7 @@ export async function updateStage(
         },
       }),
     ])
+    await syncOrderStatus(batch.orderId, now)
     await rescheduleAll(current.stage === 'CLASSIFY' ? 'CLASSIFICATION_COMPLETED' : 'PACKING_COMPLETED')
     return getOrder(batch.orderId)
   }
@@ -127,32 +128,37 @@ export async function updateStage(
       }),
     ])
     await resolveMachineFinishedAlert(batch.orderId, batch.batchId, now)
-    const updatedBatches = await prisma.orderBatch.findMany({
-      where: { orderId: batch.orderId },
-    })
-    if (updatedBatches.every((item) => item.status === 'COMPLETED')) {
-      await prisma.laundryOrder.update({
-        where: { orderId: batch.orderId },
-        data: { status: 'FOLDING_PACKING' },
-      })
-    }
+    await syncOrderStatus(batch.orderId, now)
   }
   if (action === 'unload') await rescheduleAll('STAGE_UNLOADED')
   return getOrder(batch.orderId)
 }
 
-export async function completePacking(orderId: number) {
-  const order = await getOrder(orderId)
-  if (!order) fail(404, 'NOT_FOUND', 'Order not found')
-  if (order.batches.some((batch) => batch.status !== 'COMPLETED'))
-    fail(400, 'INVALID_STATE', 'All batches must be machine-complete')
-  if (order.status !== 'FOLDING_PACKING')
-    fail(400, 'INVALID_STATE', 'Order is not waiting for packing')
-  const now = new Date()
-  return prisma.laundryOrder.update({
+// Derives the order status from its batch stages: every CLASSIFY done -> WAITING,
+// only PACKING left -> FOLDING_PACKING, every stage done -> READY.
+async function syncOrderStatus(orderId: number, now: Date) {
+  const order = await prisma.laundryOrder.findUnique({
     where: { orderId },
-    data: { status: 'READY', packingCompletedAt: now, readyAt: now },
-    include: orderInclude,
+    include: { batches: { include: { stages: true } } },
+  })
+  if (!order || order.status === 'READY' || order.status === 'COMPLETED') return
+  const stages = order.batches.flatMap((batch) => batch.stages)
+  const done = (stage: (typeof stages)[number]) => stage.status === 'COMPLETED'
+  const status = stages.every(done)
+    ? 'READY'
+    : stages.filter((stage) => stage.stage !== 'PACKING').every(done)
+      ? 'FOLDING_PACKING'
+      : stages.filter((stage) => stage.stage === 'CLASSIFY').every(done)
+        ? 'WAITING'
+        : 'RECEIVED'
+  if (status === order.status) return
+  await prisma.laundryOrder.update({
+    where: { orderId },
+    data: {
+      status,
+      ...(status !== 'RECEIVED' && !order.classifiedAt ? { classifiedAt: now } : {}),
+      ...(status === 'READY' ? { packingCompletedAt: now, readyAt: now } : {}),
+    },
   })
 }
 

@@ -2,14 +2,7 @@ import { Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { MachinePane, TaskCard } from '../components/queue/QueueComponents'
 import { ConfirmActionModal, NotificationModal } from '../components/modals/ModalComponents'
-import {
-  completePacking,
-  confirmClassification,
-  getQueue,
-  sendReadyNotification,
-  updateStage,
-  type QueueResponse,
-} from '../api'
+import { getQueue, sendReadyNotification, updateStage, type QueueResponse } from '../api'
 import type { Task } from '../types/task'
 
 export function QueuePage({
@@ -68,10 +61,10 @@ export function QueuePage({
         : task.action_type === 'PACK'
           ? 'amber'
           : task.stage_status === 'MACHINE_FINISHED'
-        ? 'amber'
-        : task.stage_status === 'IN_PROGRESS'
-          ? 'blue'
-          : 'slate',
+            ? 'amber'
+            : task.stage_status === 'IN_PROGRESS'
+              ? 'blue'
+              : 'slate',
     button: task.button ?? undefined,
     orderId: task.order_id,
     batchId: task.batch_id,
@@ -107,9 +100,7 @@ export function QueuePage({
         const action = task.stageStatus === 'MACHINE_FINISHED' ? 'unload' : 'machine-finished'
         await updateStage(task, action)
       } else if (task.orderId) {
-        if (task.action === 'PHÂN LOẠI') await confirmClassification(task.orderId)
-        else if (task.action === 'XẾP ĐỒ') await completePacking(task.orderId)
-        else await sendReadyNotification(task.orderId, notificationContent ?? '')
+        await sendReadyNotification(task.orderId, notificationContent ?? '')
       }
       await load()
       onToast()
@@ -199,8 +190,8 @@ export function QueuePage({
               }}
               canAcceptUnload={Boolean(
                 dragging?.stageStatus === 'MACHINE_FINISHED' &&
-                  dragging.orderId === task.orderId &&
-                  dragging.batchStageId === task.batchStageId,
+                dragging.orderId === task.orderId &&
+                dragging.batchStageId === task.batchStageId,
               )}
               onUnloadDrop={() => {
                 if (!dragging) return

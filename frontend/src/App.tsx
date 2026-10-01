@@ -2,15 +2,8 @@ import { useState } from 'react'
 import { BrowserRouter } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { CreateOrderModal, DetailModal, ScenarioModal } from './components/modals/ModalComponents'
-import { initialTasks } from './data/mockTasks'
 import { AppRoutes } from './app/routes'
-import {
-  completePacking,
-  confirmClassification,
-  sendReadyNotification,
-  updateStage,
-  type CreatedOrder,
-} from './api'
+import { sendReadyNotification, updateStage, type CreatedOrder } from './api'
 import type { Task } from './types/task'
 import type { Alert } from './api'
 
@@ -49,14 +42,11 @@ function App() {
               ? 'machine-finished'
               : 'unload'
         await updateStage(selected, action, selected.machineId ?? undefined)
-      } else if (selected.orderId) {
-        if (selected.action === 'PHÂN LOẠI') await confirmClassification(selected.orderId)
-        else if (selected.action === 'XẾP ĐỒ') await completePacking(selected.orderId)
-        else
-          await sendReadyNotification(
-            selected.orderId,
-            'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
-          )
+      } else if (selected.orderId && selected.action === 'CHỜ GỬI TIN KHÁCH') {
+        await sendReadyNotification(
+          selected.orderId,
+          'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
+        )
       }
       setModal(null)
       setQueueRefresh((value) => value + 1)
@@ -70,7 +60,12 @@ function App() {
     openDetail({
       id: String(alert.order_id),
       rank: 0,
-      action: alert.type === 'FORGOTTEN_PACKING' ? 'XẾP ĐỒ' : alert.type === 'FORGOTTEN_NOTIFICATION' ? 'CHỜ GỬI TIN KHÁCH' : 'LẤY ĐỒ RA',
+      action:
+        alert.type === 'FORGOTTEN_PACKING'
+          ? 'XẾP ĐỒ'
+          : alert.type === 'FORGOTTEN_NOTIFICATION'
+            ? 'CHỜ GỬI TIN KHÁCH'
+            : 'LẤY ĐỒ RA',
       customer: `Đơn #${alert.order_id}`,
       group: alert.batch_id ? `Mẻ #${alert.batch_id}` : 'Cảnh báo vận hành',
       detail: alert.reason,
@@ -85,7 +80,6 @@ function App() {
       <AppShell
         toast={toast}
         onCreate={() => setModal('create')}
-        onOrder={() => openDetail(initialTasks[0])}
         onScenario={(type) => setModal(type)}
         onCloseToast={() => setToast(false)}
         onAlertAction={handleAlertAction}
