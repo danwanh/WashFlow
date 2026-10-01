@@ -181,6 +181,7 @@ export async function create(req: Request, res: Response) {
             machineId: isManualStage(stage.stage) ? null : stage.machineId,
             plannedStartAt: new Date(stage.plannedStartAt),
             plannedEndAt: new Date(stage.plannedEndAt),
+            // Sorting starts as soon as the order is accepted.
             actualStartedAt: stage.stage === 'CLASSIFY' ? new Date() : null,
           },
         })

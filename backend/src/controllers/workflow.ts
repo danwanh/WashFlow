@@ -6,7 +6,10 @@ import {
   getOrder,
   orderResource,
 } from '../services/api.js'
-import { sendNotification, updateStage } from '../services/workflow.js'
+import {
+  sendNotification,
+  updateStage,
+} from '../services/workflow.js'
 
 export async function stage(req: Request, res: Response) {
   const action = req.path.endsWith('/start')

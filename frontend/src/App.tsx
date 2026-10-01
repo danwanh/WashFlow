@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { BrowserRouter } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
-import { CreateOrderModal, DetailModal, ScenarioModal } from './components/modals/ModalComponents'
+import {
+  CreateOrderModal,
+  DetailModal,
+  type DetailAction,
+} from './components/modals/ModalComponents'
 import { AppRoutes } from './app/routes'
-import { sendReadyNotification, updateStage, type CreatedOrder } from './api'
+import { sendReadyNotification, updateStage } from './api'
+import { useStatusFeed } from './hooks/useStatusFeed'
 import type { Task } from './types/task'
 import type { Alert } from './api'
 
@@ -37,36 +42,7 @@ function App() {
         'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
       )
     setModal(null)
-    showToast()
-  }
-  const confirmScenario = () => {
-    setModal(null)
-    showToast()
-  }
-  const processDetailAction = async () => {
-    if (!selected) return
-    try {
-      if (selected.batchId && selected.batchStageId) {
-        const action =
-          selected.stageStatus === 'PLANNED'
-            ? 'start'
-            : selected.stageStatus === 'IN_PROGRESS'
-              ? 'machine-finished'
-              : 'unload'
-        await updateStage(selected, action, selected.machineId ?? undefined)
-      } else if (selected.orderId && selected.action === 'CHỜ GỬI TIN KHÁCH') {
-        await sendReadyNotification(
-          selected.orderId,
-          'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
-        )
-      }
-      setModal(null)
-      setQueueRefresh((value) => value + 1)
-      showToast()
-    } catch {
-      setModal(null)
-      showToast()
-    }
+    afterChange()
   }
   const handleAlertAction = (alert: Alert) => {
     openDetail({
@@ -93,8 +69,8 @@ function App() {
         notices={feed.notices}
         taskCount={feed.taskCount}
         onCreate={() => setModal('create')}
-        onScenario={(type) => setModal(type)}
-        onCloseToast={() => setToast(false)}
+        onDismissNotice={feed.dismiss}
+        onDismissAllNotices={feed.clearAll}
         onAlertAction={handleAlertAction}
       >
         <AppRoutes

@@ -2,30 +2,9 @@ import type { Request, Response } from 'express'
 import { prisma } from '../services/api.js'
 import { batchTimings, isManualStage } from '../services/timing.js'
 
-const stageLabel = (stage: string) => stage === 'WASH' ? 'GIẶT' : 'SẤY'
+const MINUTE = 60_000
+const machineLabel = (stage: string) => (stage === 'WASH' ? 'GIẶT' : 'SẤY')
 const machineType = (stage: string) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
-const stageRank = (stage: string) => ({ CLASSIFY: 0, WASH: 1, DRY: 2, PACKING: 3 })[stage] ?? 9
-const approachingMinutes = Number(process.env.STAGE_APPROACHING_THRESHOLD_MINUTES ?? 5)
-const timing = (stage: any, now: Date) => {
-  const end = stage.plannedEndAt?.getTime() ?? 0
-  const actual = stage.actualEndedAt?.getTime()
-  const reference = actual ?? now.getTime()
-  const delta = Math.round((reference - end) / 60000)
-  const remaining = Math.ceil((end - now.getTime()) / 60000)
-  const status = actual
-    ? delta > 0 ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME'
-    : delta > 0 ? 'LATE' : remaining <= approachingMinutes ? 'APPROACHING' : 'ON_TIME'
-  return {
-    timing_status: status,
-    delay_minutes: Math.max(0, delta),
-    remaining_minutes: Math.max(0, remaining),
-    timing_label: status === 'LATE' || status === 'COMPLETED_LATE'
-      ? `Đã trễ ${Math.max(0, delta)} phút`
-      : status === 'APPROACHING'
-        ? `Sắp trễ sau ${Math.max(0, remaining)} phút`
-        : actual ? 'Hoàn tất đúng kế hoạch' : `Còn ${Math.max(0, remaining)} phút`,
-  }
-}
 const stageStatusLabel = (status: string) =>
   ({
     PLANNED: 'Chờ vào máy',
@@ -101,31 +80,26 @@ export async function list(_req: Request, res: Response) {
         timing_label: `Chờ gửi tin ${minutes(now.getTime() - readySince)} phút`,
       })
     }
-    // CLASSIFY and PACKING are per-batch stages; only the final notification is order-level.
-    if (order.status === 'READY')
-      addOrderTask('CHỜ GỬI TIN KHÁCH', 'NOTIFY', 'Gửi tin khách', 'Đơn đã sẵn sàng')
+
     for (const batch of order.batches) {
-      const stages = [...batch.stages].sort(
-        (a, b) => stageRank(a.stage) - stageRank(b.stage),
-      )
-      const pending = stages.findIndex(
-        (stage, index) =>
-          stage.status !== 'COMPLETED' &&
-          (index === 0 || stages[index - 1]?.status === 'COMPLETED'),
-      )
+      const timings = batchTimings(batch.stages, now.getTime())
+      const pending = timings.findIndex(({ stage }) => stage.status !== 'COMPLETED')
       if (pending < 0) continue
-      const stage = stages[pending]!
-      const remainingMinutes = stages
-        .slice(pending)
-        .reduce(
-          (sum, item) =>
-            sum +
-            (item.stage !== 'CLASSIFY' && item.stage !== 'PACKING' && item.plannedEndAt && item.plannedStartAt
-              ? (item.plannedEndAt.getTime() - item.plannedStartAt.getTime()) /
-                60000
-              : 0),
-          0,
-        )
+      const { stage, timing } = timings[pending]!
+      // Work still ahead of the batch: only the unfinished part of the current stage, then
+      // the full planned length of every later stage.
+      const remainingMinutes = timings.slice(pending).reduce((sum, { stage: item }) => {
+        const duration =
+          item.plannedEndAt && item.plannedStartAt
+            ? item.plannedEndAt.getTime() - item.plannedStartAt.getTime()
+            : 0
+        if (item.status === 'MACHINE_FINISHED') return sum
+        if (item.status === 'IN_PROGRESS' && item.actualStartedAt)
+          return (
+            sum + Math.max(0, item.actualStartedAt.getTime() + duration - now.getTime()) / MINUTE
+          )
+        return sum + duration / MINUTE
+      }, 0)
       const slackMinutes = Math.round(
         (order.pickupAt.getTime() - now.getTime()) / MINUTE - remainingMinutes,
       )
@@ -136,28 +110,24 @@ export async function list(_req: Request, res: Response) {
           ? 'PHÂN LOẠI'
           : stage.stage === 'PACKING'
             ? 'XẾP ĐỒ'
-            :
-        stage.status === 'MACHINE_FINISHED'
-          ? `LẤY ĐỒ RA · ${machine?.name ?? label}`
-          : stage.status === 'IN_PROGRESS'
-            ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? label}`
-            : `VÀO MÁY ${label} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
+            : stage.status === 'MACHINE_FINISHED'
+              ? `LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
+              : stage.status === 'IN_PROGRESS'
+                ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
+                : `VÀO MÁY ${machineLabel(stage.stage)} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
       const actionType =
         stage.stage === 'CLASSIFY'
           ? 'CLASSIFY'
           : stage.stage === 'PACKING'
             ? 'PACK'
-            :
-        stage.status === 'MACHINE_FINISHED'
-          ? 'UNLOAD'
-          : stage.status === 'IN_PROGRESS'
-            ? 'MACHINE_FINISHED'
-            : 'START'
-      const button =
-        stage.stage === 'CLASSIFY' || stage.stage === 'PACKING'
-          ? 'Xong'
-          :
-        stage.status === 'MACHINE_FINISHED'
+            : stage.status === 'MACHINE_FINISHED'
+              ? 'UNLOAD'
+              : stage.status === 'IN_PROGRESS'
+                ? 'MACHINE_FINISHED'
+                : 'START'
+      const button = manual
+        ? 'Xong'
+        : stage.status === 'MACHINE_FINISHED'
           ? 'Xong'
           : stage.status === 'IN_PROGRESS'
             ? 'Máy xong'
@@ -188,10 +158,9 @@ export async function list(_req: Request, res: Response) {
         slack_minutes: slackMinutes,
         machine_id: stage.machineId,
         machine_name: machine?.name ?? null,
-        machine_type: ['WASH', 'DRY'].includes(stage.stage) ? machineType(stage.stage) : undefined,
+        machine_type: manual ? undefined : machineType(stage.stage),
         button,
-        alert_count: order.alerts.length,
-        ...timing(stage, now),
+        ...timing,
       })
     }
   }

@@ -77,27 +77,21 @@ export function TaskCard({
     task.stageStatus === 'PLANNED' &&
     task.action.includes('VÀO MÁY') &&
     (!task.plannedStartAt || new Date(task.plannedStartAt).getTime() <= now)
-  const deadline = task.estimatedAt ? new Date(task.estimatedAt).getTime() : 0
-  const due = task.dueAt ? new Date(task.dueAt).getTime() : 0
-  const stageEnd = task.plannedEndAt ? new Date(task.plannedEndAt).getTime() : 0
-  const remaining =
-    task.stageStatus === 'IN_PROGRESS' && stageEnd ? Math.ceil((stageEnd - now) / 60000) : null
-  const waitMinutes =
-    task.stageStatus === 'PLANNED' && task.plannedStartAt
-      ? Math.ceil((new Date(task.plannedStartAt).getTime() - now) / 60000)
-      : null
-  const timeLabel = task.timingLabel ||
-    waitMinutes !== null && waitMinutes > 0
-      ? `Đợi ${waitMinutes} phút`
-      : task.stageStatus === 'IN_PROGRESS'
-        ? remaining !== null && remaining < 0
-          ? `Trễ ${Math.abs(remaining)} phút`
-          : `Còn ${Math.max(0, remaining ?? 0)} phút`
-        : task.stageStatus === 'MACHINE_FINISHED'
-          ? 'Chờ dỡ đồ'
-          : deadline && due && Math.max(deadline, now) > due
-            ? `Trễ ${Math.ceil((Math.max(deadline, now) - due) / 60000)} phút`
-            : 'Đúng hẹn'
+  const timing = liveTiming(task.timing, now, task.stage)
+  // Passed pickup is a stronger state than an ETA that is merely late.
+  const due = task.dueAt ? new Date(task.dueAt).getTime() : null
+  const pickupOverdue = due !== null && now > due ? Math.ceil((now - due) / 60_000) : 0
+  const etaLate = pickupOverdue ? 0 : (task.orderLateMinutes ?? 0)
+  const phase = task.timing?.phase
+  const planNote = !task.stage
+    ? null
+    : phase === 'RUNNING'
+      ? `Xong dự kiến ${formatClock(task.timing?.expected_end_at)}`
+      : phase === 'WAITING_UNLOAD'
+        ? `Máy xong lúc ${formatClock(task.timing?.expected_end_at)}`
+        : task.stage === 'WASH' || task.stage === 'DRY'
+          ? `Kế hoạch ${formatClock(task.plannedStartAt)}–${formatClock(task.plannedEndAt)}`
+          : null
   return (
     <article
       className={`task-card ${task.rank === 1 ? 'selected' : ''} ${pickupOverdue ? 'pickup-overdue' : ''} ${canAcceptUnload ? 'unload-target' : ''} ${unloadDropTarget ? 'unload-drop-target' : ''}`}
@@ -147,11 +141,17 @@ export function TaskCard({
         <div className="meta">
           {task.detail} <i>·</i> <strong>Hẹn {task.due}</strong>
         </div>
-      </div>
-      <div className="task-action">
-        {timeLabel && (
-          <div className={`task-timing ${task.timingStatus?.includes('LATE') ? 'late' : ''}`}>
-            <Clock size={13} /> {timeLabel}
+        {(pickupOverdue > 0 || etaLate > 0) && (
+          <div className="task-flags">
+            {pickupOverdue > 0 ? (
+              <span className="pickup-overdue-badge">
+                <AlertTriangle size={13} /> Trễ giờ hẹn {formatMinutes(pickupOverdue)}
+              </span>
+            ) : (
+              <span className="task-timing late order-late">
+                <AlertTriangle size={13} /> Nguy cơ trễ hẹn {formatMinutes(etaLate)}
+              </span>
+            )}
           </div>
         )}
       </div>
