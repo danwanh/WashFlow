@@ -85,11 +85,6 @@ WashFlow moves this planning off the staff's memory and onto the system. Staff o
 
 There is no authentication, staff management or multi-store support. The UI is in Vietnamese.
 
-Further documentation:
-* [`spec.md`](spec.md) — domain and workflow rules (status models, merge matrix, batching, scheduling)
-* [`db.md`](db.md) — database ERD
-* [`api.md`](api.md) — HTTP API contract
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
