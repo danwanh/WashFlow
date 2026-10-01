@@ -161,3 +161,23 @@ test('schedules after an operational busy machine becomes available', () => {
   assert.equal(result.batches[0]?.stages[1]?.plannedStartAt, busyUntil.toISOString())
   assert.equal(result.estimatedAt, '2026-01-01T09:20:00.000Z')
 })
+
+test('never puts groups that only share a towel batch together', () => {
+  // Towels merge with both white and dark laundry, but white and dark must stay apart.
+  const result = buildPlan({
+    service: 'WASH_DRY',
+    now,
+    pickupAt: new Date('2026-01-01T12:00:00.000Z'),
+    machines,
+    items: [
+      { index: 0, itemType: 'towel', quantity: 1, weightKg: 4 },
+      { index: 1, itemType: 'shirt', quantity: 1, weightKg: 2 },
+      { index: 2, itemType: 'dark', quantity: 1, weightKg: 2 },
+    ],
+  })
+  assert.equal(result.feasible, true)
+  for (const batch of result.batches) {
+    const indices = batch.items.map((item) => item.itemIndex)
+    assert.ok(!(indices.includes(1) && indices.includes(2)))
+  }
+})

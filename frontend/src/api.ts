@@ -14,6 +14,14 @@ export type PlanResponse = {
   plan_id: string
   feasible: boolean
   estimated_at: string | null
+  earliest_feasible_pickup: string | null
+  affected_orders: Array<{
+    order_id: number
+    customer: string
+    pickup_at: string | null
+    estimated_at: string
+    late: boolean
+  }>
   compatibility_groups: Array<{
     group: string
     itemIndices: number[]
@@ -258,6 +266,8 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       NOTIFICATION_FAILED: 'Không gửi được thông báo cho khách',
       NOT_FOUND: 'Không tìm thấy dữ liệu tác vụ',
       PICKUP_UNFEASIBLE: 'Giờ hẹn mới không khả thi với lịch xử lý hiện tại',
+      STALE_PLAN:
+        'Lịch xử lý đã thay đổi, kế hoạch không còn kịp giờ hẹn. Vui lòng lập lại kế hoạch.',
     }
     const error = new Error(
       messages[body.error?.code ?? ''] ?? 'Không thể cập nhật dữ liệu. Vui lòng thử lại.',

@@ -20,10 +20,14 @@ app.use(cors())
 app.use(express.json())
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/events', events)
-// Tell live clients to refetch after every successful change (trial plans and scans change nothing
-// by themselves; a scan that changes alerts notifies on its own).
+// Tell live clients to refetch after every successful change (trial plans, previews and scans
+// change nothing by themselves; a scan that changes alerts notifies on its own).
 app.use((req, res, next) => {
-  if (req.method !== 'GET' && !/\/(plan|scan)\/?$/.test(req.path))
+  if (
+    req.method !== 'GET' &&
+    !/\/(plan|scan)\/?$/.test(req.path) &&
+    req.body?.preview !== true
+  )
     res.on('finish', () => {
       if (res.statusCode < 400) notifyChange(['queue', 'alerts'])
     })

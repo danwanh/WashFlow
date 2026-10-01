@@ -35,13 +35,26 @@ export async function list(_req: Request, res: Response) {
     })).map(view),
   )
 }
+const statuses = ['AVAILABLE', 'BUSY', 'OFFLINE', 'MAINTENANCE']
 export async function update(req: Request, res: Response) {
-  const machine = await prisma.machine
-    .update({
-      where: { machineId: getId(req.params.machineId) },
-      data: { status: getBody(req).status },
-    })
-    .catch(() => fail(404, 'NOT_FOUND', 'Machine not found'))
+  const machineId = getId(req.params.machineId)
+  const status = getBody(req).status
+  if (!statuses.includes(status)) fail(400, 'INVALID_INPUT', 'Invalid machine status')
+  const current = await prisma.machine.findUnique({
+    where: { machineId },
+    include: {
+      stages: { where: { status: { in: ['IN_PROGRESS', 'MACHINE_FINISHED'] } }, take: 1 },
+    },
+  })
+  if (!current) fail(404, 'NOT_FOUND', 'Machine not found')
+  // A machine still holding a batch is freed by unloading it; marking it AVAILABLE by hand
+  // would let a second batch start in it.
+  if (status === 'AVAILABLE' && current.stages.length)
+    fail(409, 'MACHINE_UNAVAILABLE', 'Machine still holds a batch; unload it first')
+  const machine = await prisma.machine.update({
+    where: { machineId },
+    data: { status },
+  })
   await rescheduleAll(
     machine.status === 'AVAILABLE' ? 'MACHINE_RETURNED' : 'MACHINE_FAILURE',
   )

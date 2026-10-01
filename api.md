@@ -147,6 +147,7 @@ Response when feasible:
   "plan_id": "opaque-trial-plan-token",
   "feasible": true,
   "estimated_at": "2026-09-10T15:10:00Z",
+  "earliest_feasible_pickup": null,
   "pickup_at": "2026-09-10T16:00:00Z",
   "deadline_buffer_minutes": 50,
   "customer": {
@@ -164,11 +165,18 @@ Response when feasible:
 Plan internals are returned in camelCase: each `batches[]` entry is
 `{ batchNo, weightKg, group, items: [{ itemIndex, weightKg }], stages: [{ stage,
 machineId, plannedStartAt, plannedEndAt }] }`, and `compatibility_groups[]` is
-`{ group, itemIndices, totalWeightKg }`. `affected_orders` is always empty.
+`{ group, itemIndices, totalWeightKg }`.
 
-The plan is always returned with `200`. If the requested pickup cannot be met,
-`feasible` is `false`, `estimated_at` is the earliest feasible pickup, and
-`warnings` contains `PICKUP_TOO_EARLY`. If no machine can take the laundry,
+The planner decides the batches; the batches are then inserted into the whole
+current schedule (every open order, ordered by slack), and `estimated_at` and the
+stage times in `batches` come from that trial schedule. `affected_orders[]`
+(`order_id`, `customer`, `pickup_at`, `estimated_at`, `late`) lists orders that
+are on time now but would become late.
+
+The plan is always returned with `200`. It is infeasible (`feasible: false`) when
+the new order would miss its pickup (`warnings` contains `PICKUP_TOO_EARLY`) or
+make another order late (`AFFECTS_OTHER_ORDERS`); `earliest_feasible_pickup` is
+then the earliest whole-minute pickup that avoids both (or `null`). If no machine can take the laundry,
 `feasible` is `false`, `batches` is empty, and `warnings` contains
 `NO_FEASIBLE_MACHINE`. Items heavier than the largest usable machine are split
 across batches.
@@ -183,9 +191,10 @@ Planning rules:
 - Batch generation uses modified Best Fit Decreasing with machine capacity
   checks.
 - `WASH_DRY` requires a feasible washer and dryer for every batch.
-- The planner only sees existing work through each machine's next free time;
-  it does not re-check other orders' deadlines. Those orders are re-planned by
-  the reschedule that runs after confirmation.
+- A `BUSY` machine with no running or finished stage is treated as out of use,
+  as in the rescheduler.
+- Previously accepted deadlines are protected: a plan that makes an on-time
+  order late is infeasible.
 
 ### Confirm a plan
 
@@ -202,14 +211,18 @@ Request:
 ```
 
 On success the server persists the customer, order, items, batches, batch
-items, and stages in one transaction, sets the order status to `RECEIVED`,
-starts every `CLASSIFY` stage (`actual_started_at` = now), and then reschedules
-all open orders (`NEW_ORDER`).
+items, and stages, sets the order status to `RECEIVED`, starts every
+`CLASSIFY` stage (`actual_started_at` = now), and reschedules all open orders
+(`NEW_ORDER`), all in one transaction. The new schedule is checked again before
+committing.
 
 Response: `201 Created` with the complete order resource.
 
 Errors: `409 STALE_PLAN` if the plan is unknown, expired, or already
-confirmed; `422 PICKUP_UNFEASIBLE` if the plan was not feasible.
+confirmed, or if work changed since planning so that the order would now miss
+its pickup or make an on-time order late (`details.estimated_at`,
+`details.affected_orders`, `details.unscheduled_stage_ids`; nothing is saved);
+`422 PICKUP_UNFEASIBLE` if the plan was not feasible.
 
 ## Orders
 
@@ -251,19 +264,22 @@ Request:
 ```
 
 Inside one transaction the server updates `pickup_at` and reschedules every open
-order. The change is rejected if a stage cannot be scheduled, if this order
-becomes late, or if another order that was on time becomes late; orders that
-were already late do not block it. On success it records
-`APPOINTMENT_HISTORY` and returns `{ order, schedule }`.
+order. The change is rejected if a stage of this order cannot be scheduled, if
+this order becomes late, or if another order that was on time becomes late;
+orders that were already late do not block it. On success it records
+`APPOINTMENT_HISTORY` (its `estimated_at` is the ETA under the new pickup time)
+and returns `{ order, schedule }`.
 
 If infeasible, the transaction is rolled back and the server returns
-`422 PICKUP_UNFEASIBLE` with `details.earliest_feasible_pickup`,
+`422 PICKUP_UNFEASIBLE` with `details.earliest_feasible_pickup` (the earliest
+whole-minute pickup that meets both rules, or `null`),
 `details.affected_orders`, and `details.unscheduled_stage_ids`.
 
 With `"preview": true` nothing is saved. The server returns `200` with
 `feasible`, `affected_orders[]` (`order_id`, `relation`: `changing` |
-`same_group` | `affected`, `customer`, `pickup_at`, `estimated_at`, `late`,
+`same_group`, `customer`, `pickup_at`, `estimated_at`, `late`,
 `preexisting_late`), `unscheduled_stage_ids`, and `earliest_feasible_pickup`.
+The order being changed is always listed, even when it is already late.
 A new pickup equal to the current one is rejected with `400`.
 
 ### Recalculate schedule

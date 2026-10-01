@@ -177,6 +177,9 @@ function validBatches(batches: BatchDraft[], input: PlanInput): boolean {
 
 function bfd(input: PlanInput): BatchDraft[] | null {
   const sorted = [...input.items].sort((a, b) => b.weightKg - a.weightKg || a.index - b.index)
+  const groupOf = (itemIndex: number) =>
+    groups[input.items.find((item) => item.index === itemIndex)?.itemType.toLowerCase() ?? ''] ??
+    'SPECIAL'
   const batches: BatchDraft[] = []
   for (const item of sorted) {
     const group = groups[item.itemType.toLowerCase()] ?? 'SPECIAL'
@@ -186,7 +189,9 @@ function bfd(input: PlanInput): BatchDraft[] | null {
       const weight = batch.weightKg + item.weightKg
       if (
         !batch.items.some((batchItem) => batchItem.itemIndex === item.index) &&
-        canMerge(group, batch.group) &&
+        // The matrix is not transitive (towels merge with white and dark, which do not merge
+        // with each other), so check against every item already in the batch.
+        batch.items.every((batchItem) => canMerge(group, groupOf(batchItem.itemIndex))) &&
         smallestCapacity(weight, input) !== null
       ) {
         const waste = smallestCapacity(weight, input)! - weight

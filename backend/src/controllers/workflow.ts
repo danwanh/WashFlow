@@ -34,7 +34,7 @@ export async function draft(req: Request, res: Response) {
   res.json({
     type: 'READY_FOR_PICKUP',
     channel: 'SMS',
-    content: `Your laundry order #${order.orderId} is ready for pickup.`,
+    content: `Đơn giặt #${order.orderId} của quý khách đã sẵn sàng. Mời quý khách đến nhận đồ.`,
   })
 }
 

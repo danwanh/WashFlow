@@ -649,6 +649,16 @@ export function CreateOrderModal({
       })
     : '--:--'
   const noFeasibleMachine = plan?.warnings.includes('NO_FEASIBLE_MACHINE')
+  const ownLate = plan?.warnings.includes('PICKUP_TOO_EARLY')
+  const delayedOrders = plan?.affected_orders ?? []
+  const earliestPickup = plan?.earliest_feasible_pickup
+    ? new Date(plan.earliest_feasible_pickup).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      })
+    : null
   const pickupTimestamp = () => {
     const [hours, minutes] = pickupAt.split(':').map(Number)
     const date = new Date(`${pickupDate}T00:00:00`)
@@ -961,14 +971,23 @@ export function CreateOrderModal({
                     ? 'Không thể lập lịch · Không có máy phù hợp'
                     : plan?.feasible
                       ? `Khả thi · Dự kiến xong ${estimated} · Đúng giờ hẹn`
-                      : `Không khả thi · Dự kiến xong ${estimated} sau giờ hẹn`}
+                      : ownLate
+                        ? `Không khả thi · Dự kiến xong ${estimated} sau giờ hẹn`
+                        : `Không khả thi · Làm trễ ${delayedOrders.length} đơn đang đúng hẹn`}
                 </b>
                 <small>
                   {noFeasibleMachine
                     ? 'Lý do: Không có máy operational đủ công suất cho công đoạn yêu cầu.'
                     : plan?.feasible
                       ? 'Lý do: Máy hiện có đủ thời gian để hoàn tất trước giờ hẹn.'
-                      : 'Lý do: Thời gian xử lý dự kiến vượt quá giờ hẹn của khách.'}
+                      : ownLate
+                        ? 'Lý do: Thời gian xử lý dự kiến vượt quá giờ hẹn của khách.'
+                        : `Lý do: Ưu tiên đơn này sẽ đẩy ${delayedOrders
+                            .map((order) => `#${order.order_id} ${order.customer}`)
+                            .join(', ')} trễ hẹn.`}
+                  {!plan?.feasible && earliestPickup && (
+                    <> Giờ hẹn sớm nhất có thể: {earliestPickup}.</>
+                  )}
                 </small>
               </div>
             </div>

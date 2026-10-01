@@ -110,7 +110,6 @@ export function QueuePage({
       } else if (task.orderId) {
         await sendReadyNotification(task.orderId, notificationContent ?? '')
       }
-      await load()
       onChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không thể cập nhật tác vụ')
@@ -122,7 +121,6 @@ export function QueuePage({
     setDragging(null)
     setTarget(null)
     void updateStage(task, 'unload')
-      .then(load)
       .then(onChanged)
       .catch((cause) =>
         setError(cause instanceof Error ? cause.message : 'Không thể lấy đồ ra khỏi máy'),
@@ -279,7 +277,6 @@ export function QueuePage({
           if (dragging.batchId && dragging.batchStageId) {
             const machine = queue?.machines.find((item) => item.name === target)
             void updateStage(dragging, 'start', machine?.machine_id)
-              .then(load)
               .then(onChanged)
               .catch((cause) =>
                 setError(cause instanceof Error ? cause.message : 'Không thể đưa đồ vào máy'),

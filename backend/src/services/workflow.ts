@@ -32,24 +32,27 @@ export async function updateStage(
   if (isManualStage(current.stage)) {
     if (action !== 'finished' || current.status !== 'PLANNED')
       fail(400, 'INVALID_STATE', 'This stage is completed with machine-finished')
-    await prisma.$transaction([
-      prisma.batchStage.update({
-        where: { batchStageId: stageId },
+    // Every write below is guarded by the state it expects, so two staff (or two clicks)
+    // acting at once never both apply the same transition.
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.batchStage.updateMany({
+        where: { batchStageId: stageId, status: 'PLANNED' },
         data: {
           status: 'COMPLETED',
           actualStartedAt: current.actualStartedAt ?? now,
           actualEndedAt: now,
         },
-      }),
-      prisma.orderBatch.update({
+      })
+      if (!count) fail(409, 'INVALID_STATE', 'Stage was already completed')
+      await tx.orderBatch.update({
         where: { batchId },
         data: {
           status: next ? 'WAITING' : 'COMPLETED',
           currentStage: next?.stage ?? null,
           completedAt: next ? null : now,
         },
-      }),
-    ])
+      })
+    })
     await syncOrderStatus(batch.orderId, now)
     await rescheduleAll(current.stage === 'CLASSIFY' ? 'CLASSIFICATION_COMPLETED' : 'PACKING_COMPLETED')
     return getOrder(batch.orderId)
@@ -72,9 +75,16 @@ export async function updateStage(
       !correctType
     )
       fail(409, 'MACHINE_UNAVAILABLE', 'Machine cannot run this stage')
-    await prisma.$transaction([
-      prisma.batchStage.update({
-        where: { batchStageId: stageId },
+    await prisma.$transaction(async (tx) => {
+      // Claim the machine only while it is still free: two bags dropped on the same machine
+      // at once cannot both start.
+      const claimed = await tx.machine.updateMany({
+        where: { machineId: machine.machineId, status: 'AVAILABLE' },
+        data: { status: 'BUSY' },
+      })
+      if (!claimed.count) fail(409, 'MACHINE_UNAVAILABLE', 'Machine cannot run this stage')
+      const started = await tx.batchStage.updateMany({
+        where: { batchStageId: stageId, status: 'PLANNED' },
         // Re-anchor the plan on the real start and the chosen machine's cycle length, so
         // timing and the rescheduler know when this machine actually frees up.
         data: {
@@ -84,19 +94,16 @@ export async function updateStage(
           plannedStartAt: now,
           plannedEndAt: new Date(now.getTime() + machine.processingMinutes * 60_000),
         },
-      }),
-      prisma.machine.update({
-        where: { machineId: machine.machineId },
-        data: { status: 'BUSY' },
-      }),
-      prisma.orderBatch.update({
+      })
+      if (!started.count) fail(400, 'INVALID_STATE', 'Batch and stage are not ready')
+      await tx.orderBatch.update({
         where: { batchId },
         data: {
           status: current.stage === 'WASH' ? 'WASHING' : 'DRYING',
           currentStage: current.stage,
         },
-      }),
-    ])
+      })
+    })
   } else if (action === 'finished') {
     if (current.status !== 'IN_PROGRESS')
       fail(400, 'INVALID_STATE', 'Stage is not in progress')
@@ -104,24 +111,28 @@ export async function updateStage(
   } else {
     if (current.status !== 'MACHINE_FINISHED' || !current.machineId)
       fail(400, 'INVALID_STATE', 'Stage is not waiting for unload')
-    await prisma.$transaction([
-      prisma.batchStage.update({
-        where: { batchStageId: stageId },
+    const machineId = current.machineId
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.batchStage.updateMany({
+        where: { batchStageId: stageId, status: 'MACHINE_FINISHED' },
         data: { status: 'COMPLETED', actualEndedAt: now },
-      }),
-      prisma.machine.update({
-        where: { machineId: current.machineId },
+      })
+      if (!count) fail(409, 'INVALID_STATE', 'Stage was already unloaded')
+      // Free the machine, but keep it OFFLINE/MAINTENANCE if staff took it out of service
+      // while the cycle was running.
+      await tx.machine.updateMany({
+        where: { machineId, status: 'BUSY' },
         data: { status: 'AVAILABLE' },
-      }),
-      prisma.orderBatch.update({
+      })
+      await tx.orderBatch.update({
         where: { batchId },
         data: {
           status: next ? 'WAITING' : 'COMPLETED',
           currentStage: next?.stage ?? null,
           completedAt: next ? null : now,
         },
-      }),
-    ])
+      })
+    })
     await resolveMachineFinishedAlert(batch.orderId, batch.batchId, now)
     await syncOrderStatus(batch.orderId, now)
   }
