@@ -40,9 +40,11 @@ test('keeps WASH_DRY stages ordered and preserves item allocations', () => {
   )
   assert.deepEqual(allocated.map((item) => item.itemIndex).sort(), [1, 2, 3])
   for (const batch of result.batches) {
-    assert.equal(batch.stages[0]?.stage, 'WASH')
-    assert.equal(batch.stages[1]?.stage, 'DRY')
-    assert.ok(new Date(batch.stages[1]!.plannedStartAt) >= new Date(batch.stages[0]!.plannedEndAt))
+    assert.equal(batch.stages[0]?.stage, 'CLASSIFY')
+    assert.equal(batch.stages[1]?.stage, 'WASH')
+    assert.equal(batch.stages[2]?.stage, 'DRY')
+    assert.equal(batch.stages[3]?.stage, 'PACKING')
+    assert.ok(new Date(batch.stages[2]!.plannedStartAt) >= new Date(batch.stages[1]!.plannedEndAt))
   }
 })
 
@@ -100,8 +102,9 @@ test('uses the smaller washer or dryer capacity for WASH_DRY splits', () => {
     [5, 3],
   )
   for (const batch of result.batches) {
-    assert.equal(batch.stages[0]?.stage, 'WASH')
-    assert.equal(batch.stages[1]?.stage, 'DRY')
+    assert.equal(batch.stages[0]?.stage, 'CLASSIFY')
+    assert.equal(batch.stages[1]?.stage, 'WASH')
+    assert.equal(batch.stages[2]?.stage, 'DRY')
   }
 })
 
@@ -147,6 +150,6 @@ test('schedules after an operational busy machine becomes available', () => {
     items: [{ index: 1, itemType: 'shirt', quantity: 1, weightKg: 2 }],
   })
   assert.equal(result.feasible, true)
-  assert.equal(result.batches[0]?.stages[0]?.plannedStartAt, busyUntil.toISOString())
-  assert.equal(result.estimatedAt, '2026-01-01T09:05:00.000Z')
+   assert.equal(result.batches[0]?.stages[1]?.plannedStartAt, busyUntil.toISOString())
+   assert.equal(result.estimatedAt, '2026-01-01T09:20:00.000Z')
 })

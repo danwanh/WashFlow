@@ -5,7 +5,8 @@ import {
 } from './alerts.js'
 import { rescheduleAll } from './rescheduler.js'
 
-const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
+const stageOrder = (stage: string) =>
+  ({ CLASSIFY: 0, WASH: 1, DRY: 2, PACKING: 3 })[stage] ?? 9
 
 export async function updateStage(
   batchId: number,
@@ -21,9 +22,35 @@ export async function updateStage(
   if (!batch || !current) fail(404, 'NOT_FOUND', 'Batch or stage not found')
   const now = new Date()
 
+  if (current.stage === 'CLASSIFY' || current.stage === 'PACKING') {
+    if (action !== 'finished' || current.status !== 'PLANNED')
+      fail(400, 'INVALID_STATE', 'Stage is not ready to complete')
+    const next = [...batch.stages]
+      .sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage))
+      .find((stage) => stage.status === 'PLANNED' && stage.batchStageId !== stageId)
+    await prisma.$transaction([
+      prisma.batchStage.update({
+        where: { batchStageId: stageId },
+        data: { status: 'COMPLETED', actualEndedAt: now },
+      }),
+      prisma.orderBatch.update({
+        where: { batchId },
+        data: {
+          status: next ? 'WAITING' : 'COMPLETED',
+          currentStage: next?.stage ?? null,
+          completedAt: next ? null : now,
+        },
+      }),
+    ])
+    await rescheduleAll(current.stage === 'CLASSIFY' ? 'CLASSIFICATION_COMPLETED' : 'PACKING_COMPLETED')
+    return getOrder(batch.orderId)
+  }
+
   if (action === 'start') {
     if (batch.status !== 'WAITING' || current.status !== 'PLANNED')
       fail(400, 'INVALID_STATE', 'Batch and stage are not ready')
+    if (current.stage === 'CLASSIFY' || current.stage === 'PACKING')
+      fail(400, 'INVALID_STATE', 'This stage starts automatically')
     const machine = await prisma.machine.findUnique({
       where: { machineId: machineId ?? current.machineId ?? 0 },
     })

@@ -179,6 +179,7 @@ export async function create(req: Request, res: Response) {
             machineId: stage.machineId,
             plannedStartAt: new Date(stage.plannedStartAt),
             plannedEndAt: new Date(stage.plannedEndAt),
+            actualStartedAt: stage.stage === 'CLASSIFY' ? new Date() : null,
           },
         })
     }

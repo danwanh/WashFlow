@@ -36,6 +36,12 @@ const serviceLabel: Record<string, string> = {
   DRY: 'Sấy',
   WASH_DRY: 'Giặt và sấy',
 }
+const stageLabels: Record<string, string> = {
+  CLASSIFY: 'Phân loại',
+  WASH: 'Giặt',
+  DRY: 'Sấy',
+  PACKING: 'Đóng gói',
+}
 const todayInputValue = () => {
   const date = new Date()
   const pad = (number: number) => String(number).padStart(2, '0')
@@ -349,6 +355,7 @@ export function DetailModal({
                 status={`${allocatedItems || stageName} · ${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'}${machineName}`}
                 tone={active?.stage === 'DRY' ? 'amber' : 'blue'}
                 current={stepFor(batch)}
+                stages={batch.stages}
               />
             )
           })}
@@ -379,13 +386,22 @@ function Progress({
   status,
   tone,
   current,
+  stages,
 }: {
   title: string
   status: string
   tone: 'blue' | 'amber'
   current: number
+  stages: Array<{
+    stage: string
+    status: string
+    planned_start_at: string | null
+    planned_end_at: string | null
+    actual_started_at: string | null
+    actual_ended_at: string | null
+    timing_label?: string
+  }>
 }) {
-  const steps = ['Tiếp nhận', 'Phân loại', 'Giặt', 'Sấy', 'Xếp đồ']
   return (
     <section className={`progress-visual ${tone}`}>
       <div className="progress-visual-heading">
@@ -393,13 +409,19 @@ function Progress({
         <span>{status}</span>
       </div>
       <div className={`visual-stepper current-${current}`}>
-        {steps.map((step, index) => (
+        {stages.map((stage, index) => (
           <div
-            className={`visual-step ${index < current ? 'done' : index === current ? 'active' : ''}`}
-            key={step}
+            className={`visual-step ${stage.status === 'COMPLETED' ? 'done' : index === current ? 'active' : ''}`}
+            key={`${stage.stage}-${index}`}
           >
-            <i>{index < current ? '✓' : index + 1}</i>
-            <small>{step}</small>
+            <i>{stage.status === 'COMPLETED' ? '✓' : index + 1}</i>
+            <small>{stageLabels[stage.stage] ?? stage.stage}</small>
+            <em>{stage.status === 'COMPLETED' && stage.actual_ended_at
+              ? `Thực tế ${new Date(stage.actual_ended_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+              : stage.planned_start_at && stage.planned_end_at
+                ? `${new Date(stage.planned_start_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(stage.planned_end_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                : ''}</em>
+            {stage.timing_label && stage.status !== 'COMPLETED' && <span>{stage.timing_label}</span>}
           </div>
         ))}
       </div>

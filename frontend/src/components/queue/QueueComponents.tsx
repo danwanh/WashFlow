@@ -83,7 +83,7 @@ export function TaskCard({
     task.stageStatus === 'PLANNED' && task.plannedStartAt
       ? Math.ceil((new Date(task.plannedStartAt).getTime() - now) / 60000)
       : null
-  const timeLabel =
+  const timeLabel = task.timingLabel ||
     waitMinutes !== null && waitMinutes > 0
       ? `Đợi ${waitMinutes} phút`
       : task.stageStatus === 'IN_PROGRESS'
@@ -147,7 +147,7 @@ export function TaskCard({
       </div>
       <div className="task-action">
         {timeLabel && (
-          <div className={`task-timing ${timeLabel.startsWith('Trễ') ? 'late' : ''}`}>
+          <div className={`task-timing ${task.timingStatus?.includes('LATE') ? 'late' : ''}`}>
             <Clock size={13} /> {timeLabel}
           </div>
         )}

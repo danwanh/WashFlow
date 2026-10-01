@@ -87,6 +87,11 @@ export function QueuePage({
     plannedEndAt: task.planned_end_at,
     actualStartedAt: task.actual_started_at,
     actualMachineFinishedAt: task.actual_machine_finished_at,
+    actualEndedAt: task.actual_ended_at,
+    timingStatus: task.timing_status,
+    delayMinutes: task.delay_minutes,
+    remainingMinutes: task.remaining_minutes,
+    timingLabel: task.timing_label,
   }))
   const visible = tasks.filter(
     (task) =>

@@ -25,7 +25,7 @@ export type PlanResponse = {
     group: string
     items: Array<{ itemIndex: number; weightKg: number }>
     stages: Array<{
-      stage: 'WASH' | 'DRY'
+      stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
       machineId: number
       plannedStartAt: string
       plannedEndAt: string
@@ -70,6 +70,11 @@ export type QueueTask = {
   planned_end_at: string | null
   actual_started_at: string | null
   actual_machine_finished_at: string | null
+  actual_ended_at: string | null
+  timing_status?: string
+  delay_minutes?: number
+  remaining_minutes?: number
+  timing_label?: string
 }
 
 export type QueueResponse = {
@@ -172,12 +177,19 @@ export type OrderDetails = {
     batch_items: Array<{ order_item_id: number; weight_kg: number }>
     stages: Array<{
       batch_stage_id: number
-      stage: 'WASH' | 'DRY'
+      stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
       status: string
       machine_id: number | null
       machine_name: string | null
       planned_end_at: string | null
+      planned_start_at: string | null
       actual_machine_finished_at: string | null
+      actual_started_at: string | null
+      actual_ended_at: string | null
+      timing_status?: string
+      delay_minutes?: number
+      remaining_minutes?: number
+      timing_label?: string
     }>
   }>
 }

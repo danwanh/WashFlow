@@ -2,9 +2,14 @@ import { prisma } from './api.js'
 import type { Prisma } from '../../generated/prisma/client.js'
 
 type Reason = string
-const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
+const stageOrder = (stage: string) =>
+  ({ CLASSIFY: 0, WASH: 1, DRY: 2, PACKING: 3 })[stage] ?? 9
 const operational = (status: string) =>
   !['OFFLINE', 'MAINTENANCE'].includes(status)
+const nonMachineDuration = (stage: string) =>
+  (stage === 'CLASSIFY'
+    ? Number(process.env.CLASSIFY_OFFSET_MINUTES ?? 10)
+    : Number(process.env.PACKING_OFFSET_MINUTES ?? 15)) * 60_000
 
 export async function rescheduleAll(reason: Reason) {
   return prisma.$transaction((tx) => rescheduleWithClient(tx, reason))
@@ -134,6 +139,23 @@ export async function rescheduleWithClient(
           now.getTime())
         : (previousStage.plannedEndAt?.getTime() ?? now.getTime())
       : now.getTime()
+    if (selected.stage.stage === 'CLASSIFY' || selected.stage.stage === 'PACKING') {
+      const start = readyAt
+      const end = start + nonMachineDuration(selected.stage.stage)
+      if (
+        selected.stage.plannedStartAt?.getTime() !== start ||
+        selected.stage.plannedEndAt?.getTime() !== end
+      ) {
+        changedStageIds.push(selected.stage.batchStageId)
+        changedOrderIds.add(selected.order.orderId)
+        await tx.batchStage.update({
+          where: { batchStageId: selected.stage.batchStageId },
+          data: { plannedStartAt: new Date(start), plannedEndAt: new Date(end) },
+        })
+      }
+      scheduled.add(selected.stage.batchStageId)
+      continue
+    }
     const candidates = machines.filter(
       (machine) =>
         operational(machine.status) &&

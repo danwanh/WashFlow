@@ -145,6 +145,26 @@ export async function scanAlerts(now = new Date()) {
       if (lateAlert) changed.push(lateAlert);
 
       for (const batch of order.batches) {
+        for (const stage of batch.stages) {
+          const end = stage.plannedEndAt?.getTime();
+          if (!end || stage.status === 'COMPLETED') continue;
+          const remaining = Math.ceil((end - now.getTime()) / 60000);
+          const stageAlert = await syncAlert(tx, {
+            orderId: order.orderId,
+            batchId: batch.batchId,
+            type: remaining < 0 ? 'STAGE_LATE' : 'STAGE_APPROACHING',
+            severity: remaining < 0 ? 'WARNING' : 'INFO',
+            reason: remaining < 0
+              ? `${stage.stage} đã trễ ${Math.abs(remaining)} phút`
+              : `${stage.stage} sắp đến hạn trong ${remaining} phút`,
+            active: remaining < 0 || remaining <= 5,
+            now,
+          });
+          if (stageAlert) changed.push(stageAlert);
+        }
+      }
+
+      for (const batch of order.batches) {
         const finishedStage = batch.stages.find(
           (stage) => stage.status === "MACHINE_FINISHED",
         );

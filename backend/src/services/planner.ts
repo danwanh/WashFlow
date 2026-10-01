@@ -20,7 +20,7 @@ export type PlannedBatch = {
   group: string
   items: { itemIndex: number; weightKg: number }[]
   stages: {
-    stage: 'WASH' | 'DRY'
+    stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
     machineId: number
     plannedStartAt: string
     plannedEndAt: string
@@ -87,8 +87,10 @@ type Evaluation = { plan: PlannedBatch[]; eta: number; unusedCapacity: number }
 const ETA_TOLERANCE = 5 * 60_000
 const MAX_ITERATIONS = 3
 const TOP_K = 10
+const CLASSIFY_MINUTES = Number(process.env.CLASSIFY_OFFSET_MINUTES ?? 10)
+const PACKING_MINUTES = Number(process.env.PACKING_OFFSET_MINUTES ?? 15)
 const iso = (date: Date) => date.toISOString()
-const requiredStages = (service: Service): Stage[] =>
+const machineStages = (service: Service): Stage[] =>
   service === 'WASH' ? ['WASH'] : service === 'DRY' ? ['DRY'] : ['WASH', 'DRY']
 const typeFor = (stage: Stage) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
 const canMerge = (a: string, b: string) => Boolean(matrix[a]?.[b] || matrix[b]?.[a])
@@ -100,7 +102,7 @@ const availableMachines = (input: PlanInput, stage: Stage) =>
   )
 
 function maxFeasibleCapacity(input: PlanInput): number | null {
-  const capacities = requiredStages(input.service).map((stage) => {
+  const capacities = machineStages(input.service).map((stage) => {
     const machines = availableMachines(input, stage)
     return machines.length ? Math.max(...machines.map((machine) => machine.capacityKg)) : null
   })
@@ -110,7 +112,7 @@ function maxFeasibleCapacity(input: PlanInput): number | null {
 }
 
 function smallestCapacity(weightKg: number, input: PlanInput): number | null {
-  const capacities = requiredStages(input.service).map((stage) => {
+  const capacities = machineStages(input.service).map((stage) => {
     const machine = availableMachines(input, stage)
       .filter((candidate) => candidate.capacityKg >= weightKg)
       .sort((a, b) => a.capacityKg - b.capacityKg)[0]
@@ -218,8 +220,14 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
   let unusedCapacity = 0
   for (const [batchIndex, batch] of ordered.entries()) {
     const stages: PlannedBatch['stages'] = []
-    let ready = input.now.getTime()
-    for (const stage of requiredStages(input.service)) {
+    let ready = input.now.getTime() + CLASSIFY_MINUTES * 60_000
+    stages.push({
+      stage: 'CLASSIFY',
+      machineId: 0,
+      plannedStartAt: iso(input.now),
+      plannedEndAt: iso(new Date(ready)),
+    })
+    for (const stage of machineStages(input.service)) {
       const candidates = availableMachines(input, stage).filter(
         (machine) => machine.capacityKg >= batch.weightKg,
       )
@@ -244,6 +252,14 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
       })
       ready = end
     }
+    const packingStart = ready
+    const packingEnd = packingStart + PACKING_MINUTES * 60_000
+    stages.push({
+      stage: 'PACKING',
+      machineId: 0,
+      plannedStartAt: iso(new Date(packingStart)),
+      plannedEndAt: iso(new Date(packingEnd)),
+    })
     planned.push({
       batchNo: batchIndex + 1,
       weightKg: batch.weightKg,
