@@ -44,37 +44,6 @@ const stageLabels: Record<string, string> = {
   DRY: 'Sấy',
   PACKING: 'Đóng gói',
 }
-const stageOrder = ['CLASSIFY', 'WASH', 'DRY', 'PACKING']
-const sortStages = <T extends { stage: string }>(stages: T[]) =>
-  [...stages].sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage))
-
-type OrderStage = OrderDetails['batches'][number]['stages'][number]
-
-// What the detail modal's primary button does.
-export type DetailAction =
-  | {
-      kind: 'stage'
-      batchId: number
-      batchStageId: number
-      endpoint: 'start' | 'machine-finished' | 'unload'
-      machineId?: number
-    }
-  | { kind: 'notify'; orderId: number }
-
-const stageActionLabel = (stage: OrderStage) => {
-  if (stage.status === 'MACHINE_FINISHED') return 'Đã lấy đồ ra'
-  if (stage.status === 'IN_PROGRESS') return 'Máy đã chạy xong'
-  if (stage.stage === 'CLASSIFY') return 'Xong phân loại'
-  if (stage.stage === 'PACKING') return 'Xong đóng gói'
-  return `Cho vào ${stage.machine_name ?? (stage.stage === 'WASH' ? 'máy giặt' : 'máy sấy')}`
-}
-const stageEndpoint = (stage: OrderStage): 'start' | 'machine-finished' | 'unload' =>
-  stage.status === 'MACHINE_FINISHED'
-    ? 'unload'
-    : stage.status === 'IN_PROGRESS' || stage.stage === 'CLASSIFY' || stage.stage === 'PACKING'
-      ? 'machine-finished'
-      : 'start'
-
 const todayInputValue = () => {
   const date = new Date()
   const pad = (number: number) => String(number).padStart(2, '0')
@@ -407,9 +376,8 @@ export function DetailModal({
                 title={`Mẻ ${batch.batch_no} · ${batch.weight_kg.toFixed(1)}kg`}
                 status={`${allocatedItems ? `${allocatedItems} · ` : ''}${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'} · ${current}`}
                 tone={active?.stage === 'DRY' ? 'amber' : 'blue'}
-                stages={stages}
-                activeId={active?.batch_stage_id ?? null}
-                now={now}
+                current={stepFor(batch)}
+                stages={batch.stages}
               />
             )
           })}
@@ -443,65 +411,45 @@ function Progress({
   title,
   status,
   tone,
+  current,
   stages,
-  activeId,
-  now,
 }: {
   title: string
   status: string
   tone: 'blue' | 'amber'
-  stages: OrderStage[]
-  activeId: number | null
-  now: number
+  current: number
+  stages: Array<{
+    stage: string
+    status: string
+    planned_start_at: string | null
+    planned_end_at: string | null
+    actual_started_at: string | null
+    actual_ended_at: string | null
+    timing_label?: string
+  }>
 }) {
-  const lastDone = stages.reduce(
-    (last, stage, index) => (stage.status === 'COMPLETED' ? index : last),
-    -1,
-  )
-  const progress = stages.length > 1 ? Math.max(0, lastDone) / (stages.length - 1) : 1
   return (
     <section className={`progress-visual ${tone}`}>
       <div className="progress-visual-heading">
         <b>{title}</b>
         <span>{status}</span>
       </div>
-      <div
-        className="visual-stepper"
-        style={
-          {
-            '--steps': stages.length,
-            '--progress': `${Math.round(progress * 100)}%`,
-          } as React.CSSProperties
-        }
-      >
-        {stages.map((stage, index) => {
-          const done = stage.status === 'COMPLETED'
-          const timing = liveTiming(stage, now, stage.stage)
-          const state = done
-            ? 'done'
-            : stage.status === 'IN_PROGRESS'
-              ? 'running'
-              : stage.status === 'MACHINE_FINISHED'
-                ? 'waiting'
-                : stage.batch_stage_id === activeId
-                  ? 'current'
-                  : 'planned'
-          return (
-            <div
-              className={`visual-step ${state} ${statusClass(timing?.status) === 'late' ? 'late' : ''}`}
-              key={stage.batch_stage_id}
-            >
-              <i>{done ? '✓' : index + 1}</i>
-              <small>{stageLabels[stage.stage] ?? stage.stage}</small>
-              <em>
-                {done
-                  ? `Xong ${formatClock(stage.actual_ended_at)}`
-                  : `${stage.machine_name ? `${stage.machine_name} · ` : ''}${formatClock(stage.planned_start_at)}–${formatClock(stage.planned_end_at)}`}
-              </em>
-              {timing && <span>{timing.label}</span>}
-            </div>
-          )
-        })}
+      <div className={`visual-stepper current-${current}`}>
+        {stages.map((stage, index) => (
+          <div
+            className={`visual-step ${stage.status === 'COMPLETED' ? 'done' : index === current ? 'active' : ''}`}
+            key={`${stage.stage}-${index}`}
+          >
+            <i>{stage.status === 'COMPLETED' ? '✓' : index + 1}</i>
+            <small>{stageLabels[stage.stage] ?? stage.stage}</small>
+            <em>{stage.status === 'COMPLETED' && stage.actual_ended_at
+              ? `Thực tế ${new Date(stage.actual_ended_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+              : stage.planned_start_at && stage.planned_end_at
+                ? `${new Date(stage.planned_start_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(stage.planned_end_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                : ''}</em>
+            {stage.timing_label && stage.status !== 'COMPLETED' && <span>{stage.timing_label}</span>}
+          </div>
+        ))}
       </div>
     </section>
   )

@@ -3,8 +3,8 @@
 ## Repository Shape
 
 - The implemented browser app is a Vite/React package under `frontend/`.
-- `backend/` is a Node.js/TypeScript Express API with Prisma 7 and PostgreSQL. HTTP routes are under `backend/src/routes/`, request handlers under `backend/src/controllers/`, shared domain/database services under `backend/src/services/`, and scheduling logic under `backend/src/planner.ts`.
-- The browser entrypoint is `frontend/src/main.tsx`; the current UI, mock data, and interaction state are concentrated in `frontend/src/App.tsx` and `frontend/src/index.css`.
+- `backend/` is a Node.js/TypeScript Express API with Prisma 7 and PostgreSQL. HTTP routes are under `backend/src/routes/`, request handlers under `backend/src/controllers/`, shared domain/database services under `backend/src/services/`, with batch planning in `backend/src/services/planner.ts` and event-driven rescheduling in `backend/src/services/rescheduler.ts`.
+- The browser entrypoint is `frontend/src/main.tsx`; `frontend/src/App.tsx` holds shell state (modals, toasts), routes live in `frontend/src/app/routes.tsx`, pages in `frontend/src/pages/`, feature components in `frontend/src/components/`, and all API calls/types in `frontend/src/api.ts`.
 - The backend Prisma schema is `backend/prisma/schema.prisma`, with connection configuration in `backend/prisma7.config.ts` and `DATABASE_URL` supplied through the backend environment.
 - `.stitch/SITE.md` describes an older intended `site/` layout; follow the actual `frontend/` package and its config instead.
 
@@ -17,7 +17,7 @@
 - Run `npm run format:check` from `frontend/` to verify formatting, or `npm run format` to rewrite files.
 - Run `npm ci` from `backend/` to install the backend lockfile.
 - Run `npx prisma generate` from `backend/` after changing the Prisma schema or installing dependencies.
-- Run `npx prisma migrate dev` from `backend/` only when a configured PostgreSQL database is available and a migration is intentionally being created.
+- Schema changes go through migrations in `backend/prisma/migrations/` (baseline `0_init`). Run `npx prisma migrate dev --name <change>` from `backend/` when a configured PostgreSQL database is available, and `npm run db:seed` to load sample data.
 - Run `npm run dev` from `backend/` for the API watch server, `npm start` for the API server, and `npm run typecheck` for strict TypeScript verification.
 - Run `npx prettier --write --single-quote --no-semi --trailing-comma all "src/**/*.ts" "package.json" "tsconfig.json"` from `backend/` to format backend code; run `npx prisma format` separately for the Prisma schema.
 
@@ -28,6 +28,7 @@
 - Preserve the current operational UI language: Vietnamese labels, Montserrat typography, compact queue-oriented layouts, and semantic blue/amber/emerald/red states.
 - Treat `spec.md` as the workflow/domain source of truth and `db.md` as the ERD source of truth; preserve batch splitting/merging semantics through `BATCH_ITEMS` when adding data behavior.
 - Keep the committed schedule separate from trial scheduling; the spec requires confirmation before persisting a final plan and locks `IN_PROGRESS` stages during rescheduling.
+- Every batch runs `CLASSIFY → WASH/DRY → PACKING` as `BATCH_STAGES`; the order status is derived from those stages in `backend/src/services/workflow.ts`. There are no order-level classification or packing endpoints.
 - Keep Prisma models and migrations aligned with `db.md`; preserve explicit relationships for orders, batches, batch items, stages, alerts, notifications, and appointment history.
 - Never commit `backend/.env` or expose `DATABASE_URL`; use environment variables for local database credentials.
 

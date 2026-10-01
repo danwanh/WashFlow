@@ -74,6 +74,8 @@ async function seedOrders(
     const isReady = status === 'READY'
     const isPacking = status === 'FOLDING_PACKING'
     const isProcessed = isCompleted || isReady || isPacking
+    const isClassified = status !== 'RECEIVED'
+    const isPacked = isCompleted || isReady
     const itemType = itemTypes[index % itemTypes.length]!
     const weightKg = 1.5 + index * 0.5
     const serviceType = index % 2 === 0 ? 'WASH_DRY' : 'WASH'
@@ -102,7 +104,7 @@ async function seedOrders(
         specialNote: `SEED_STATUS_${status}_${index + 1}`,
         createdAt,
         ...(status !== 'RECEIVED' ? { classifiedAt: new Date(createdAt.getTime() + 10 * 60 * 1000) } : {}),
-        ...(isPacking || isReady || isCompleted
+        ...(isPacked
           ? { packingCompletedAt: new Date(now.getTime() - 20 * 60 * 1000) }
           : {}),
         ...(isReady || isCompleted ? { readyAt: new Date(now.getTime() - 15 * 60 * 1000) } : {}),
@@ -122,13 +124,26 @@ async function seedOrders(
         orderId: order.orderId,
         batchNo: 1,
         weightKg: new Prisma.Decimal(weightKg),
-        status: isProcessed ? 'COMPLETED' : 'WAITING',
-        currentStage: isProcessed ? null : 'WASH',
-        ...(isProcessed ? { completedAt: new Date(now.getTime() - 25 * 60 * 1000) } : {}),
+        status: isPacked ? 'COMPLETED' : 'WAITING',
+        currentStage: isPacked ? null : isPacking ? 'PACKING' : isClassified ? 'WASH' : 'CLASSIFY',
+        ...(isPacked ? { completedAt: new Date(now.getTime() - 25 * 60 * 1000) } : {}),
       },
     })
     await prisma.batchItem.create({
       data: { batchId: batch.batchId, orderItemId: item.orderItemId, weightKg: new Prisma.Decimal(weightKg) },
+    })
+    const classifyStart = new Date(createdAt.getTime())
+    const classifyEnd = new Date(classifyStart.getTime() + 10 * 60 * 1000)
+    await prisma.batchStage.create({
+      data: {
+        batchId: batch.batchId,
+        stage: 'CLASSIFY',
+        status: isClassified ? 'COMPLETED' : 'PLANNED',
+        plannedStartAt: classifyStart,
+        plannedEndAt: classifyEnd,
+        actualStartedAt: classifyStart,
+        ...(isClassified ? { actualEndedAt: classifyEnd } : {}),
+      },
     })
     await prisma.batchStage.create({
       data: {
@@ -166,6 +181,20 @@ async function seedOrders(
         },
       })
     }
+    const packingStart = new Date(
+      (serviceType === 'WASH_DRY' ? dryEnd : washEnd).getTime() + 5 * 60 * 1000,
+    )
+    const packingEnd = new Date(packingStart.getTime() + 15 * 60 * 1000)
+    await prisma.batchStage.create({
+      data: {
+        batchId: batch.batchId,
+        stage: 'PACKING',
+        status: isPacked ? 'COMPLETED' : 'PLANNED',
+        plannedStartAt: packingStart,
+        plannedEndAt: packingEnd,
+        ...(isPacked ? { actualEndedAt: packingEnd } : {}),
+      },
+    })
   }
 }
 
@@ -286,6 +315,15 @@ async function main() {
       data: [
         {
           batchId: batch.batchId,
+          stage: 'CLASSIFY',
+          status: 'COMPLETED',
+          plannedStartAt: new Date(now.getTime() - 15 * 60 * 1000),
+          plannedEndAt: new Date(now.getTime() - 5 * 60 * 1000),
+          actualStartedAt: new Date(now.getTime() - 15 * 60 * 1000),
+          actualEndedAt: new Date(now.getTime() - 5 * 60 * 1000),
+        },
+        {
+          batchId: batch.batchId,
           machineId: washer.machineId,
           stage: 'WASH',
           status: 'IN_PROGRESS',
@@ -300,6 +338,13 @@ async function main() {
           status: 'PLANNED',
           plannedStartAt: new Date(now.getTime() + 50 * 60 * 1000),
           plannedEndAt: new Date(now.getTime() + 100 * 60 * 1000),
+        },
+        {
+          batchId: batch.batchId,
+          stage: 'PACKING',
+          status: 'PLANNED',
+          plannedStartAt: new Date(now.getTime() + 100 * 60 * 1000),
+          plannedEndAt: new Date(now.getTime() + 115 * 60 * 1000),
         },
       ],
     })
@@ -366,6 +411,27 @@ async function main() {
         actualMachineFinishedAt: new Date(now.getTime() - 75 * 60 * 1000),
         actualEndedAt: new Date(now.getTime() - 70 * 60 * 1000),
       },
+    })
+    await prisma.batchStage.createMany({
+      data: [
+        {
+          batchId: batch.batchId,
+          stage: 'CLASSIFY',
+          status: 'COMPLETED',
+          plannedStartAt: new Date(now.getTime() - 130 * 60 * 1000),
+          plannedEndAt: new Date(now.getTime() - 120 * 60 * 1000),
+          actualStartedAt: new Date(now.getTime() - 130 * 60 * 1000),
+          actualEndedAt: new Date(now.getTime() - 120 * 60 * 1000),
+        },
+        {
+          batchId: batch.batchId,
+          stage: 'PACKING',
+          status: 'COMPLETED',
+          plannedStartAt: new Date(now.getTime() - 70 * 60 * 1000),
+          plannedEndAt: new Date(now.getTime() - 55 * 60 * 1000),
+          actualEndedAt: new Date(now.getTime() - 15 * 60 * 1000),
+        },
+      ],
     })
     await prisma.notification.create({
       data: {

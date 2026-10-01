@@ -10,6 +10,8 @@ const labels: Record<string, string> = {
   FORGOTTEN_UNLOAD: 'Chưa lấy đồ ra',
   FORGOTTEN_PACKING: 'Chưa xếp đồ',
   FORGOTTEN_NOTIFICATION: 'Chưa gửi tin khách',
+  STAGE_APPROACHING: 'Công đoạn sắp trễ',
+  STAGE_LATE: 'Công đoạn đã trễ',
 }
 
 const actionLabels: Record<string, string> = {
@@ -19,6 +21,8 @@ const actionLabels: Record<string, string> = {
   FORGOTTEN_UNLOAD: 'Lấy đồ ra',
   FORGOTTEN_PACKING: 'Xếp đồ',
   FORGOTTEN_NOTIFICATION: 'Gửi tin khách',
+  STAGE_APPROACHING: 'Xem công đoạn',
+  STAGE_LATE: 'Xem công đoạn',
 }
 
 function AlertBellItem({ alert, onChange }: { alert: Alert; onChange: () => void }) {

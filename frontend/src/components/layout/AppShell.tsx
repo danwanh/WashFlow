@@ -10,8 +10,8 @@ type AppShellProps = {
   notices: Notice[]
   taskCount: number | null
   onCreate: () => void
-  onDismissNotice: (id: number) => void
-  onDismissAllNotices: () => void
+  onScenario: (type: 'delay' | 'notify') => void
+  onCloseToast: () => void
   onAlertAction: (alert: Alert) => void
 }
 
@@ -29,14 +29,14 @@ export function AppShell({
   notices,
   taskCount,
   onCreate,
-  onDismissNotice,
-  onDismissAllNotices,
+  onScenario,
+  onCloseToast,
   onAlertAction,
 }: AppShellProps) {
   const [alertDismissSignal, setAlertDismissSignal] = useState(0)
   return (
     <div className="app-shell">
-      <Topbar onCreate={onCreate} taskCount={taskCount} />
+      <Topbar onCreate={onCreate} onScenario={onScenario} />
       <main className="workspace">{children}</main>
       <AlertBell onAction={onAlertAction} dismissSignal={alertDismissSignal} />
       {import.meta.env.DEV && (

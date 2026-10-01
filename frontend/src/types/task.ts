@@ -27,7 +27,9 @@ export type Task = {
   plannedEndAt?: string | null
   actualStartedAt?: string | null
   actualMachineFinishedAt?: string | null
-  stage?: StageName
-  orderLateMinutes?: number
-  timing?: StageTiming
+  actualEndedAt?: string | null
+  timingStatus?: string
+  delayMinutes?: number
+  remainingMinutes?: number
+  timingLabel?: string
 }

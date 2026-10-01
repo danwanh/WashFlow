@@ -52,6 +52,25 @@ export const planStore = new Map<
   string,
   { expires: number; input: any; result: any }
 >()
+const timingStatus = (stage: any) => {
+  const now = Date.now()
+  const end = stage.plannedEndAt?.getTime() ?? now
+  const actual = stage.actualEndedAt?.getTime()
+  if (actual) return actual > end ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME'
+  return now > end ? 'LATE' : end - now <= 5 * 60_000 ? 'APPROACHING' : 'ON_TIME'
+}
+const delayMinutes = (stage: any) => {
+  const end = stage.plannedEndAt?.getTime() ?? Date.now()
+  return Math.max(0, Math.round(((stage.actualEndedAt?.getTime() ?? Date.now()) - end) / 60000))
+}
+const remainingMinutes = (stage: any) =>
+  Math.max(0, Math.ceil(((stage.plannedEndAt?.getTime() ?? Date.now()) - Date.now()) / 60000))
+const timingLabel = (stage: any) => {
+  const status = timingStatus(stage)
+  if (status === 'LATE' || status === 'COMPLETED_LATE') return `Đã trễ ${delayMinutes(stage)} phút`
+  if (status === 'APPROACHING') return `Sắp trễ sau ${remainingMinutes(stage)} phút`
+  return stage.actualEndedAt ? 'Hoàn tất đúng kế hoạch' : `Còn ${remainingMinutes(stage)} phút`
+}
 export const createPlanId = (value: unknown) =>
   crypto
     .createHmac(
@@ -60,7 +79,7 @@ export const createPlanId = (value: unknown) =>
     )
     .update(JSON.stringify(value))
     .digest('hex')
-export function orderResource(order: any) {
+  export function orderResource(order: any) {
   return {
     ...order,
     total_weight_kg: Number(order.totalWeightKg),
@@ -94,8 +113,7 @@ export function orderResource(order: any) {
       estimated_at: b.estimatedAt?.toISOString() ?? null,
       completed_at: b.completedAt?.toISOString() ?? null,
       batch_items: b.items,
-      // Workflow order (sorting, washing, drying, packing) with wait/late timing per stage.
-      stages: batchTimings<any>(b.stages, Date.now()).map(({ stage: s, timing }) => ({
+        stages: b.stages.map((s: any) => ({
         batch_stage_id: s.batchStageId,
         stage: s.stage,
         status: s.status,
@@ -106,9 +124,12 @@ export function orderResource(order: any) {
         actual_started_at: s.actualStartedAt?.toISOString() ?? null,
         actual_machine_finished_at:
           s.actualMachineFinishedAt?.toISOString() ?? null,
-        actual_ended_at: s.actualEndedAt?.toISOString() ?? null,
-        ...timing,
-      })),
+         actual_ended_at: s.actualEndedAt?.toISOString() ?? null,
+         timing_status: timingStatus(s),
+         delay_minutes: delayMinutes(s),
+         remaining_minutes: remainingMinutes(s),
+         timing_label: timingLabel(s),
+       })),
     })),
     alerts: order.alerts,
     appointments: order.appointments,
