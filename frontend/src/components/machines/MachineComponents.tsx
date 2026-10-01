@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, CircleOff, Wrench } from 'lucide-react'
+import { CheckCircle2, Wrench } from 'lucide-react'
 
 function MachineIcon({ tone }: { tone: string }) {
   const color =
@@ -49,8 +49,9 @@ export function Card({
   time,
   action,
   onAction,
-  status,
-  onStatusChange,
+  maintenance,
+  switching,
+  onToggleMaintenance,
 }: {
   name: string
   capacity: string
@@ -60,16 +61,10 @@ export function Card({
   time?: string
   action?: string
   onAction?: () => void
-  status?: string
-  onStatusChange?: (status: string) => void
+  maintenance?: boolean
+  switching?: boolean
+  onToggleMaintenance?: () => void
 }) {
-  const statusMeta: Record<string, { label: string; icon: React.ReactNode }> = {
-    AVAILABLE: { label: 'Khả dụng', icon: <CheckCircle2 size={14} /> },
-    BUSY: { label: 'Đang chạy', icon: <Activity size={14} /> },
-    MAINTENANCE: { label: 'Bảo trì', icon: <Wrench size={14} /> },
-    OFFLINE: { label: 'Ngoại tuyến', icon: <CircleOff size={14} /> },
-  }
-  const currentStatus = statusMeta[status ?? '']
   return (
     <section className={`machine-board-card ${tone}`}>
       <div className="machine-board-head">
@@ -87,17 +82,24 @@ export function Card({
           <small>{action ? 'Đơn hàng:' : tone === 'empty' ? 'Khả dụng:' : 'Đang chạy:'}</small>
           <b>{detail}</b>
         </div>
-        {onStatusChange ? (
+        {onToggleMaintenance ? (
           <div className="machine-actions">
-            <label className="machine-status-select">
-              <span>{currentStatus?.icon}</span>
-              <select value={status} onChange={(event) => onStatusChange(event.target.value)} aria-label={`Trạng thái ${name}`}>
-                <option value="AVAILABLE">Khả dụng</option>
-                <option value="BUSY" disabled>Đang chạy</option>
-                <option value="MAINTENANCE">Bảo trì</option>
-                <option value="OFFLINE">Ngoại tuyến</option>
-              </select>
-            </label>
+            {/* On = in service (idle or running); off = under maintenance. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!maintenance}
+              aria-label={`${name}: ${maintenance ? 'Bảo trì' : 'Khả dụng'}`}
+              className={`machine-service-switch ${maintenance ? 'maintenance' : ''}`}
+              disabled={switching}
+              onClick={onToggleMaintenance}
+            >
+              <span className="machine-service-track">
+                <span className="machine-service-thumb" />
+              </span>
+              {maintenance ? <Wrench size={14} /> : <CheckCircle2 size={14} />}
+              {maintenance ? 'Bảo trì' : 'Khả dụng'}
+            </button>
             {action && <button className="done" onClick={onAction}>{action}</button>}
           </div>
         ) : action ? (

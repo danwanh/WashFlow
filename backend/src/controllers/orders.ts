@@ -13,6 +13,7 @@ import {
   getBody,
   getDate,
   getId,
+  describeOrders,
   getOrder,
   orderInclude,
   planStore,
@@ -69,29 +70,6 @@ function draftOrder(
       })),
     })),
   }
-}
-
-async function describeOrders(
-  entries: Array<{ orderId: number; estimatedAt: string; late: boolean }>,
-) {
-  const orders = await prisma.laundryOrder.findMany({
-    where: { orderId: { in: entries.map((entry) => entry.orderId) } },
-    select: {
-      orderId: true,
-      pickupAt: true,
-      customer: { select: { name: true } },
-    },
-  })
-  return entries.map((entry) => {
-    const order = orders.find((item) => item.orderId === entry.orderId)
-    return {
-      order_id: entry.orderId,
-      customer: order?.customer.name ?? 'Không rõ khách hàng',
-      pickup_at: order?.pickupAt.toISOString() ?? null,
-      estimated_at: entry.estimatedAt,
-      late: entry.late,
-    }
-  })
 }
 
 export async function plan(req: Request, res: Response) {
@@ -298,107 +276,109 @@ export async function create(req: Request, res: Response) {
       ? Number(b.total_amount)
       : weightKg * (serviceRate[b.service_type] ?? 0)
   const now = new Date()
-  const created = await prisma.$transaction(
-    async (tx) => {
-      const baselineLate = lateOrderIds(
-        computeSchedule(await loadScheduleState(tx), now),
-      )
-      const customer = await tx.customer.create({
-        data: { name: b.customer.name, phone: b.customer.phone },
-      })
-      const order = await tx.laundryOrder.create({
-        data: {
-          customerId: customer.customerId,
-          serviceType: b.service_type,
-          status: 'RECEIVED',
-          totalWeightKg: new Prisma.Decimal(weightKg),
-          totalAmount: new Prisma.Decimal(totalAmount),
-          pickupAt: getDate(b.pickup_at, 'pickup_at'),
-          estimatedAt: new Date(stored.result.estimatedAt),
-          priority: Number(b.priority ?? 0),
-          specialNote: b.special_note ?? null,
-          items: {
-            create: b.items.map((x: any) => ({
-              itemType: x.item_type,
-              quantity: x.quantity,
-              weightKg: Number(x.weight_kg),
-              note: x.note ?? null,
-            })),
-          },
-        },
-        // Item indexes in the plan follow input order, so read the items back in insert order.
-        include: { items: { orderBy: { orderItemId: 'asc' } } },
-      })
-      for (const p of stored.result.batches) {
-        const batch = await tx.orderBatch.create({
-          data: {
-            orderId: order.orderId,
-            batchNo: p.batchNo,
-            weightKg: p.weightKg,
-            status: 'WAITING',
-            currentStage: p.stages[0]?.stage ?? null,
-          },
-        })
-        for (const item of p.items)
-          await tx.batchItem.create({
-            data: {
-              batchId: batch.batchId,
-              orderItemId: order.items[item.itemIndex]!.orderItemId,
-              weightKg: item.weightKg,
-            },
-          })
-        for (const stage of p.stages)
-          await tx.batchStage.create({
-            data: {
-              batchId: batch.batchId,
-              stage: stage.stage,
-              // Sorting and packing are manual and never tied to a machine.
-              machineId: isManualStage(stage.stage) ? null : stage.machineId,
-              plannedStartAt: new Date(stage.plannedStartAt),
-              plannedEndAt: new Date(stage.plannedEndAt),
-              // Sorting starts as soon as the order is accepted.
-              actualStartedAt: stage.stage === 'CLASSIFY' ? now : null,
-            },
-          })
-      }
-      // Work may have changed since the plan was made: re-check against the current schedule
-      // and only commit if the order still meets its pickup without making another order late.
-      const evaluation = evaluateOrder(
-        await loadScheduleState(tx),
-        order.orderId,
-        baselineLate,
-        now,
-      )
-      if (!evaluation.feasible)
-        fail(
-          409,
-          'STALE_PLAN',
-          'The schedule changed; the plan no longer meets every pickup time',
-          {
-            estimated_at: evaluation.own?.estimatedAt ?? null,
-            affected_orders: evaluation.newlyLate.map(
-              ({ orderId, estimatedAt, late }) => ({
-                orderId,
-                estimatedAt,
-                late,
-              }),
-            ),
-            unscheduled_stage_ids: evaluation.unscheduled,
-          },
+  const created = await prisma
+    .$transaction(
+      async (tx) => {
+        const baselineLate = lateOrderIds(
+          computeSchedule(await loadScheduleState(tx), now),
         )
-      await applySchedule(tx, evaluation.result, 'NEW_ORDER')
-      return tx.laundryOrder.findUniqueOrThrow({
-        where: { orderId: order.orderId },
-        include: orderInclude,
-      })
-    },
-    { timeout: 20_000 },
-  ).catch((cause) => {
-    // Keep the plan for a retry unless it no longer fits the schedule.
-    if (!(cause instanceof ApiError && cause.code === 'STALE_PLAN'))
-      planStore.set(planId, stored)
-    throw cause
-  })
+        const customer = await tx.customer.create({
+          data: { name: b.customer.name, phone: b.customer.phone },
+        })
+        const order = await tx.laundryOrder.create({
+          data: {
+            customerId: customer.customerId,
+            serviceType: b.service_type,
+            status: 'RECEIVED',
+            totalWeightKg: new Prisma.Decimal(weightKg),
+            totalAmount: new Prisma.Decimal(totalAmount),
+            pickupAt: getDate(b.pickup_at, 'pickup_at'),
+            estimatedAt: new Date(stored.result.estimatedAt),
+            priority: Number(b.priority ?? 0),
+            specialNote: b.special_note ?? null,
+            items: {
+              create: b.items.map((x: any) => ({
+                itemType: x.item_type,
+                quantity: x.quantity,
+                weightKg: Number(x.weight_kg),
+                note: x.note ?? null,
+              })),
+            },
+          },
+          // Item indexes in the plan follow input order, so read the items back in insert order.
+          include: { items: { orderBy: { orderItemId: 'asc' } } },
+        })
+        for (const p of stored.result.batches) {
+          const batch = await tx.orderBatch.create({
+            data: {
+              orderId: order.orderId,
+              batchNo: p.batchNo,
+              weightKg: p.weightKg,
+              status: 'WAITING',
+              currentStage: p.stages[0]?.stage ?? null,
+            },
+          })
+          for (const item of p.items)
+            await tx.batchItem.create({
+              data: {
+                batchId: batch.batchId,
+                orderItemId: order.items[item.itemIndex]!.orderItemId,
+                weightKg: item.weightKg,
+              },
+            })
+          for (const stage of p.stages)
+            await tx.batchStage.create({
+              data: {
+                batchId: batch.batchId,
+                stage: stage.stage,
+                // Sorting and packing are manual and never tied to a machine.
+                machineId: isManualStage(stage.stage) ? null : stage.machineId,
+                plannedStartAt: new Date(stage.plannedStartAt),
+                plannedEndAt: new Date(stage.plannedEndAt),
+                // Sorting starts as soon as the order is accepted.
+                actualStartedAt: stage.stage === 'CLASSIFY' ? now : null,
+              },
+            })
+        }
+        // Work may have changed since the plan was made: re-check against the current schedule
+        // and only commit if the order still meets its pickup without making another order late.
+        const evaluation = evaluateOrder(
+          await loadScheduleState(tx),
+          order.orderId,
+          baselineLate,
+          now,
+        )
+        if (!evaluation.feasible)
+          fail(
+            409,
+            'STALE_PLAN',
+            'The schedule changed; the plan no longer meets every pickup time',
+            {
+              estimated_at: evaluation.own?.estimatedAt ?? null,
+              affected_orders: evaluation.newlyLate.map(
+                ({ orderId, estimatedAt, late }) => ({
+                  orderId,
+                  estimatedAt,
+                  late,
+                }),
+              ),
+              unscheduled_stage_ids: evaluation.unscheduled,
+            },
+          )
+        await applySchedule(tx, evaluation.result, 'NEW_ORDER')
+        return tx.laundryOrder.findUniqueOrThrow({
+          where: { orderId: order.orderId },
+          include: orderInclude,
+        })
+      },
+      { timeout: 20_000 },
+    )
+    .catch((cause) => {
+      // Keep the plan for a retry unless it no longer fits the schedule.
+      if (!(cause instanceof ApiError && cause.code === 'STALE_PLAN'))
+        planStore.set(planId, stored)
+      throw cause
+    })
   res.status(201).json(orderResource(await getOrder(created.orderId)))
 }
 export async function list(req: Request, res: Response) {

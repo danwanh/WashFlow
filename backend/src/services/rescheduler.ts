@@ -16,8 +16,7 @@ const manualMinutes = (stage: string) =>
       ? (process.env.CLASSIFY_OFFSET_MINUTES ?? 10)
       : (process.env.PACKING_OFFSET_MINUTES ?? 15),
   ) * MINUTE
-const operational = (status: string) =>
-  !['OFFLINE', 'MAINTENANCE'].includes(status)
+const operational = (status: string) => status !== 'MAINTENANCE'
 const byWorkflow = <T extends { stage: string }>(stages: T[]) =>
   [...stages].sort((a, b) => stageOrder(a.stage) - stageOrder(b.stage))
 
@@ -171,6 +170,7 @@ export function computeSchedule(source: ScheduleState, now: Date) {
   const changedStageIds: number[] = []
   const changedOrderIds = new Set<number>()
   const unscheduledStageIds: number[] = []
+  const unscheduledOrderIds = new Set<number>()
   const stagePlans: Array<{
     batchStageId: number
     machineId: number | null
@@ -311,6 +311,23 @@ export function computeSchedule(source: ScheduleState, now: Date) {
     )
     if (!candidates.length) {
       unscheduledStageIds.push(selected.stage.batchStageId)
+      unscheduledOrderIds.add(selected.order.orderId)
+      // Drop a stale machine (e.g. one now under maintenance) so the queue shows it unassigned.
+      if (
+        selected.stage.machineId !== null &&
+        selected.stage.plannedStartAt &&
+        selected.stage.plannedEndAt
+      ) {
+        changedStageIds.push(selected.stage.batchStageId)
+        changedOrderIds.add(selected.order.orderId)
+        stagePlans.push({
+          batchStageId: selected.stage.batchStageId,
+          machineId: null,
+          plannedStartAt: selected.stage.plannedStartAt,
+          plannedEndAt: selected.stage.plannedEndAt,
+        })
+        selected.stage.machineId = null
+      }
       continue
     }
     const finish = (machine: ScheduleMachine) =>
@@ -358,7 +375,10 @@ export function computeSchedule(source: ScheduleState, now: Date) {
       orderId: order.orderId,
       previousEstimatedAt: order.estimatedAt,
       estimatedAt: new Date(orderEta).toISOString(),
-      late: orderEta > order.pickupAt.getTime(),
+      // A stage no machine can run leaves the ETA unknown: treat the order as at risk.
+      late:
+        unscheduledOrderIds.has(order.orderId) ||
+        orderEta > order.pickupAt.getTime(),
     })
   }
   return {

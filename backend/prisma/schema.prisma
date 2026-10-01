@@ -49,7 +49,6 @@ enum MachineType {
 enum MachineStatus {
   AVAILABLE
   BUSY
-  OFFLINE
   MAINTENANCE
 }
 

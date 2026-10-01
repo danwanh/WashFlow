@@ -118,7 +118,7 @@ export async function updateStage(
         data: { status: 'COMPLETED', actualEndedAt: now },
       })
       if (!count) fail(409, 'INVALID_STATE', 'Stage was already unloaded')
-      // Free the machine, but keep it OFFLINE/MAINTENANCE if staff took it out of service
+      // Free the machine, but keep it in MAINTENANCE if staff took it out of service
       // while the cycle was running.
       await tx.machine.updateMany({
         where: { machineId, status: 'BUSY' },

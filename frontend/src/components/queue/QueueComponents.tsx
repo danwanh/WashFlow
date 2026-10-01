@@ -278,7 +278,6 @@ export function MachinePane({
     ({
       AVAILABLE: 'Trống',
       BUSY: 'Đang chạy',
-      OFFLINE: 'Ngoại tuyến',
       MAINTENANCE: 'Bảo trì',
     })[status] ?? 'Không rõ'
   const renderMachine = (machine: (typeof machines)[number]) => {

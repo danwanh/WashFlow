@@ -95,23 +95,49 @@ export function orderResource(order: any) {
       completed_at: b.completedAt?.toISOString() ?? null,
       batch_items: b.items,
       // Workflow order (sorting, washing, drying, packing) with wait/late timing per stage.
-      stages: batchTimings<any>(b.stages, Date.now()).map(({ stage: s, timing }) => ({
-        batch_stage_id: s.batchStageId,
-        stage: s.stage,
-        status: s.status,
-        machine_id: s.machineId,
-        machine_name: s.machine?.name ?? null,
-        planned_start_at: s.plannedStartAt?.toISOString() ?? null,
-        planned_end_at: s.plannedEndAt?.toISOString() ?? null,
-        actual_started_at: s.actualStartedAt?.toISOString() ?? null,
-        actual_machine_finished_at:
-          s.actualMachineFinishedAt?.toISOString() ?? null,
-        actual_ended_at: s.actualEndedAt?.toISOString() ?? null,
-        ...timing,
-      })),
+      stages: batchTimings<any>(b.stages, Date.now()).map(
+        ({ stage: s, timing }) => ({
+          batch_stage_id: s.batchStageId,
+          stage: s.stage,
+          status: s.status,
+          machine_id: s.machineId,
+          machine_name: s.machine?.name ?? null,
+          planned_start_at: s.plannedStartAt?.toISOString() ?? null,
+          planned_end_at: s.plannedEndAt?.toISOString() ?? null,
+          actual_started_at: s.actualStartedAt?.toISOString() ?? null,
+          actual_machine_finished_at:
+            s.actualMachineFinishedAt?.toISOString() ?? null,
+          actual_ended_at: s.actualEndedAt?.toISOString() ?? null,
+          ...timing,
+        }),
+      ),
     })),
     alerts: order.alerts,
     appointments: order.appointments,
     notifications: order.notifications,
   }
+}
+
+// Customer and pickup for schedule entries, as listed in previews and errors.
+export async function describeOrders(
+  entries: Array<{ orderId: number; estimatedAt: string; late: boolean }>,
+) {
+  const orders = await prisma.laundryOrder.findMany({
+    where: { orderId: { in: entries.map((entry) => entry.orderId) } },
+    select: {
+      orderId: true,
+      pickupAt: true,
+      customer: { select: { name: true } },
+    },
+  })
+  return entries.map((entry) => {
+    const order = orders.find((item) => item.orderId === entry.orderId)
+    return {
+      order_id: entry.orderId,
+      customer: order?.customer.name ?? 'Không rõ khách hàng',
+      pickup_at: order?.pickupAt.toISOString() ?? null,
+      estimated_at: entry.estimatedAt,
+      late: entry.late,
+    }
+  })
 }

@@ -108,7 +108,7 @@ export type QueueResponse = {
     machine_id: number
     name: string
     type: 'WASHER' | 'DRYER'
-    status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'MAINTENANCE'
+    status: 'AVAILABLE' | 'BUSY' | 'MAINTENANCE'
     capacity_kg: number
     processing_minutes: number
     active_task: QueueTask | null
@@ -133,7 +133,7 @@ export type Machine = {
   machine_id: number
   name: string
   type: 'WASHER' | 'DRYER'
-  status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'MAINTENANCE'
+  status: 'AVAILABLE' | 'BUSY' | 'MAINTENANCE'
   capacity_kg: number
   processing_minutes: number
   updated_at: string
@@ -302,10 +302,42 @@ export function getMachines() {
   return request<Machine[]>('/machines', { method: 'GET' })
 }
 
-export function updateMachineStatus(machineId: number, status: Machine['status']) {
+// Staff only switch a machine between in service and maintenance; BUSY follows the batches.
+export function updateMachineStatus(machineId: number, status: 'AVAILABLE' | 'MAINTENANCE') {
   return request<Machine>(`/machines/${machineId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
+  })
+}
+
+export type MaintenanceStage = {
+  order_id: number
+  customer: string
+  batch_id: number
+  batch_stage_id: number
+  stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
+  new_machine_name: string | null
+  new_planned_start_at: string | null
+}
+
+export type MaintenancePreview = {
+  stopped: MaintenanceStage | null
+  moved: MaintenanceStage[]
+  unscheduled: MaintenanceStage[]
+  late_orders: Array<{
+    order_id: number
+    customer: string
+    pickup_at: string | null
+    estimated_at: string
+    late: boolean
+  }>
+}
+
+// What putting the machine under maintenance would do; nothing is saved.
+export function previewMachineMaintenance(machineId: number) {
+  return request<MaintenancePreview>(`/machines/${machineId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'MAINTENANCE', preview: true }),
   })
 }
 

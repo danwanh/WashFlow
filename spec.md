@@ -94,7 +94,7 @@ MACHINES
 - machine_id PK
 - name
 - type: WASHER | DRYER
-- status: AVAILABLE | BUSY | OFFLINE | MAINTENANCE
+- status: AVAILABLE | BUSY | MAINTENANCE
 - capacity_kg
 - processing_minutes
 - updated_at

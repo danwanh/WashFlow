@@ -8,6 +8,7 @@ import {
   FileText,
   MessageCircle,
   Plus,
+  Wrench,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -19,6 +20,8 @@ import {
   getOrder,
   previewOrder,
   type CreatedOrder,
+  type MaintenancePreview,
+  type MaintenanceStage,
   type OrderDetails,
   type PlanResponse,
   type ServiceType,
@@ -1029,6 +1032,120 @@ export function CreateOrderModal({
             {loading ? 'Đang tạo đơn...' : 'Xác nhận và tạo đơn'} <Check size={15} />
           </button>
         )}
+      </footer>
+    </ModalFrame>
+  )
+}
+
+const stageName: Record<MaintenanceStage['stage'], string> = {
+  CLASSIFY: 'Phân loại',
+  WASH: 'Giặt',
+  DRY: 'Sấy',
+  PACKING: 'Đóng gói',
+}
+const clockTime = (value: string) =>
+  new Date(value).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  })
+
+// Shown before a machine goes into maintenance: what happens to the batch in it, the batches
+// planned for it, and the orders that would become late.
+export function MaintenanceConfirmModal({
+  machineName,
+  impact,
+  saving,
+  onClose,
+  onConfirm,
+}: {
+  machineName: string
+  impact: MaintenancePreview
+  saving: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const nextMachine = (stage: MaintenanceStage) =>
+    stage.new_machine_name
+      ? `→ ${stage.new_machine_name}${stage.new_planned_start_at ? ` lúc ${clockTime(stage.new_planned_start_at)}` : ''}`
+      : '→ Chưa có máy phù hợp'
+  const stageLabel = (stage: MaintenanceStage) =>
+    `#${stage.order_id} · ${stage.customer} · ${stageName[stage.stage]}`
+  const nothing =
+    !impact.stopped &&
+    !impact.moved.length &&
+    !impact.unscheduled.length &&
+    !impact.late_orders.length
+  return (
+    <ModalFrame
+      title={`Chuyển ${machineName} sang bảo trì`}
+      onClose={onClose}
+      icon={<Wrench size={18} />}
+    >
+      <div className="scenario-body maintenance-impact">
+        {nothing && (
+          <div className="scenario-result">
+            <CheckCircle2 size={18} />
+            <span>Không có mẻ hay đơn nào bị ảnh hưởng.</span>
+          </div>
+        )}
+        {impact.stopped && (
+          <div className="pickup-affected-orders maintenance-stopped">
+            <b>Mẻ đang chạy sẽ bị dừng</b>
+            <div>
+              <span>{stageLabel(impact.stopped)}</span>
+              <small>Lấy đồ ra khỏi máy; mẻ quay về chờ vào máy và chạy lại từ đầu.</small>
+              <small>{nextMachine(impact.stopped)}</small>
+            </div>
+          </div>
+        )}
+        {impact.moved.length > 0 && (
+          <div className="pickup-affected-orders">
+            <b>Mẻ chuyển sang máy khác</b>
+            {impact.moved.map((stage) => (
+              <div key={stage.batch_stage_id}>
+                <span>{stageLabel(stage)}</span>
+                <small>{nextMachine(stage)}</small>
+              </div>
+            ))}
+          </div>
+        )}
+        {impact.unscheduled.length > 0 && (
+          <div className="pickup-affected-orders">
+            <b>Mẻ không còn máy để chạy</b>
+            {impact.unscheduled.map((stage) => (
+              <div key={stage.batch_stage_id}>
+                <span>{stageLabel(stage)}</span>
+                <small className="late">Chờ đến khi có máy phù hợp hoạt động trở lại</small>
+              </div>
+            ))}
+          </div>
+        )}
+        {impact.late_orders.length > 0 && (
+          <div className="pickup-affected-orders">
+            <b>Đơn sẽ trễ hẹn</b>
+            {impact.late_orders.map((order) => (
+              <div key={order.order_id}>
+                <span>
+                  #{order.order_id} · {order.customer}
+                </span>
+                <small className="late">
+                  Hẹn {order.pickup_at ? clockTime(order.pickup_at) : '--:--'} · Dự kiến xong{' '}
+                  {clockTime(order.estimated_at)}
+                </small>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <footer>
+        <button className="secondary" onClick={onClose} disabled={saving}>
+          Hủy
+        </button>
+        <button className="primary" onClick={onConfirm} disabled={saving}>
+          {saving ? 'Đang chuyển...' : 'Xác nhận bảo trì'}
+        </button>
       </footer>
     </ModalFrame>
   )

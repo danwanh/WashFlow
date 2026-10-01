@@ -87,7 +87,8 @@ pickup time has passed, is beyond the pickup time).
 ### Machine types and statuses
 
 - Types: `WASHER`, `DRYER`
-- Statuses: `AVAILABLE`, `BUSY`, `OFFLINE`, `MAINTENANCE`
+- Statuses: `AVAILABLE`, `BUSY`, `MAINTENANCE`. `BUSY` is set and cleared by the
+  workflow (start / unload); staff only switch between in service and `MAINTENANCE`.
 
 ### Alerts
 
@@ -428,8 +429,24 @@ Request:
 }
 ```
 
-Any status change reschedules all open orders (`MACHINE_RETURNED` when the new
-status is `AVAILABLE`, otherwise `MACHINE_FAILURE`), keeping locked stages.
+`status` must be `MAINTENANCE` or `AVAILABLE` (anything else: `400 INVALID_INPUT`).
+
+- `MAINTENANCE` (from `AVAILABLE` or `BUSY`; already under maintenance:
+  `409 INVALID_STATE`). A batch running in the machine is stopped: its stage goes
+  back to `PLANNED` (no actual start, no machine) and its batch to `WAITING`, so it
+  is re-planned and run again from the start. Planned work moves to other
+  machines; a stage no machine can run keeps no machine and its order gets a
+  `LATE_RISK`. A finished batch waiting to be unloaded is unloaded as usual and the
+  machine stays under maintenance. Reschedule reason `MACHINE_MAINTENANCE`.
+- With `"preview": true` nothing is saved and the response is the impact:
+  `stopped` (the running batch, or `null`), `moved[]`, `unscheduled[]` (each
+  `order_id`, `customer`, `batch_id`, `batch_stage_id`, `stage`,
+  `new_machine_name`, `new_planned_start_at`), and `late_orders[]` (orders on time
+  now that would become late: `order_id`, `customer`, `pickup_at`,
+  `estimated_at`, `late`).
+- `AVAILABLE` only from `MAINTENANCE` (otherwise `409 INVALID_STATE`). The machine
+  becomes `BUSY` if a finished batch is still inside, else `AVAILABLE`; all open
+  orders are rescheduled (`MACHINE_RETURNED`).
 
 ## Alerts
 

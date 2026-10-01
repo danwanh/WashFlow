@@ -98,7 +98,7 @@ const canMerge = (a: string, b: string) => Boolean(matrix[a]?.[b] || matrix[b]?.
 const availableMachines = (input: PlanInput, stage: Stage) =>
   input.machines.filter(
     (machine) =>
-      !['OFFLINE', 'MAINTENANCE'].includes(machine.status) &&
+      machine.status !== 'MAINTENANCE' &&
       machine.type === typeFor(stage),
   )
 
@@ -216,7 +216,7 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
   if (!validBatches(batches, input)) return null
   const availability = new Map(
     input.machines
-      .filter((machine) => !['OFFLINE', 'MAINTENANCE'].includes(machine.status))
+      .filter((machine) => machine.status !== 'MAINTENANCE')
       .map((machine) => [machine.machineId, machine.availableAt?.getTime() ?? input.now.getTime()]),
   )
   const ordered = [...batches].sort(

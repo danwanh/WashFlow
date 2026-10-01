@@ -59,7 +59,7 @@ test('rejects an item when no required machine is available', () => {
     service: 'WASH',
     now,
     pickupAt: new Date('2026-01-01T10:00:00.000Z'),
-    machines: [{ ...machines[0]!, capacityKg: 5, status: 'OFFLINE' }],
+    machines: [{ ...machines[0]!, capacityKg: 5, status: 'MAINTENANCE' }],
     items: [{ index: 1, itemType: 'towel', quantity: 1, weightKg: 6 }],
   })
   assert.equal(result.feasible, false)

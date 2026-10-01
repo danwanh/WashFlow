@@ -146,3 +146,26 @@ test('postponing an order that is already late is feasible once the pickup cover
     at(55).getTime(),
   )
 })
+
+test('moves planned work off a machine under maintenance', () => {
+  const second = { ...washer, machineId: 2 }
+  const state: ScheduleState = {
+    machines: [{ ...washer, status: 'MAINTENANCE' }, second],
+    orders: [order(1, 200)],
+  }
+  const result = computeSchedule(state, now)
+  const wash = result.stagePlans.find((plan) => plan.batchStageId === 12)
+  assert.equal(wash?.machineId, 2)
+  assert.deepEqual(result.unscheduledStageIds, [])
+})
+
+test('leaves a stage unassigned and the order at risk when no machine can run it', () => {
+  const state: ScheduleState = {
+    machines: [{ ...washer, status: 'MAINTENANCE' }],
+    orders: [order(1, 600)],
+  }
+  const result = computeSchedule(state, now)
+  assert.deepEqual(result.unscheduledStageIds, [12])
+  assert.equal(result.stagePlans.find((plan) => plan.batchStageId === 12)?.machineId, null)
+  assert.equal(result.affectedOrders[0]!.late, true)
+})

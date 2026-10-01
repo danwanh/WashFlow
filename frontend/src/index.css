@@ -1505,33 +1505,63 @@ button.done {
   align-items: flex-end;
   gap: 6px;
 }
-.machine-status-select {
+.machine-service-switch {
   display: inline-flex;
   align-items: center;
-  color: #0369a1;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  border-radius: 8px;
-  overflow: hidden;
-}
-.machine-status-select > span {
-  display: inline-flex;
-  padding-left: 8px;
-  pointer-events: none;
-}
-.machine-status-select select {
-  min-width: 112px;
-  border: 0;
-  padding: 8px 24px 8px 6px;
-  background: transparent;
-  color: inherit;
+  gap: 6px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
   font-size: 11px;
   font-weight: 800;
-  outline: none;
+  cursor: pointer;
 }
-.machine-status-select:focus-within {
-  border-color: #2563eb;
+.machine-service-switch.maintenance {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+.machine-service-switch:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.machine-service-switch:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 3px #dbeafe;
+}
+.machine-service-track {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  background: #10b981;
+  transition: background 0.15s;
+}
+.machine-service-switch.maintenance .machine-service-track {
+  background: #f59e0b;
+}
+.machine-service-thumb {
+  position: absolute;
+  top: 2px;
+  left: 15px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.machine-service-switch.maintenance .machine-service-thumb {
+  left: 2px;
+}
+.maintenance-impact {
+  display: grid;
+  gap: 10px;
+}
+.maintenance-stopped {
+  border-color: #fde68a;
+  background: #fffbeb;
 }
 .view-header {
   display: flex;
