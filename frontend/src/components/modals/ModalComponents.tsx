@@ -19,10 +19,12 @@ import {
   getOrder,
   previewOrder,
   type CreatedOrder,
+  type OrderDetails,
   type PlanResponse,
   type ServiceType,
 } from '../../api'
 import type { Task } from '../../types/task'
+import { formatClock, liveTiming, statusClass } from '../../utils/timing'
 
 const friendlyBatchStatus: Record<string, string> = {
   WAITING: 'Đang chờ xử lý',
@@ -36,6 +38,43 @@ const serviceLabel: Record<string, string> = {
   DRY: 'Sấy',
   WASH_DRY: 'Giặt và sấy',
 }
+const stageLabels: Record<string, string> = {
+  CLASSIFY: 'Phân loại',
+  WASH: 'Giặt',
+  DRY: 'Sấy',
+  PACKING: 'Đóng gói',
+}
+const stageOrder = ['CLASSIFY', 'WASH', 'DRY', 'PACKING']
+const sortStages = <T extends { stage: string }>(stages: T[]) =>
+  [...stages].sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage))
+
+type OrderStage = OrderDetails['batches'][number]['stages'][number]
+
+// What the detail modal's primary button does.
+export type DetailAction =
+  | {
+      kind: 'stage'
+      batchId: number
+      batchStageId: number
+      endpoint: 'start' | 'machine-finished' | 'unload'
+      machineId?: number
+    }
+  | { kind: 'notify'; orderId: number }
+
+const stageActionLabel = (stage: OrderStage) => {
+  if (stage.status === 'MACHINE_FINISHED') return 'Đã lấy đồ ra'
+  if (stage.status === 'IN_PROGRESS') return 'Máy đã chạy xong'
+  if (stage.stage === 'CLASSIFY') return 'Xong phân loại'
+  if (stage.stage === 'PACKING') return 'Xong đóng gói'
+  return `Cho vào ${stage.machine_name ?? (stage.stage === 'WASH' ? 'máy giặt' : 'máy sấy')}`
+}
+const stageEndpoint = (stage: OrderStage): 'start' | 'machine-finished' | 'unload' =>
+  stage.status === 'MACHINE_FINISHED'
+    ? 'unload'
+    : stage.status === 'IN_PROGRESS' || stage.stage === 'CLASSIFY' || stage.stage === 'PACKING'
+      ? 'machine-finished'
+      : 'start'
+
 const todayInputValue = () => {
   const date = new Date()
   const pad = (number: number) => String(number).padStart(2, '0')
@@ -83,9 +122,15 @@ export function DetailModal({
 }: {
   task: Task
   onClose: () => void
-  onAction?: () => void
-  onPickupChanged?: () => void
+  onAction?: (action: DetailAction) => Promise<void>
+  onPickupChanged?: (orderId: number, pickupAt: string) => void
 }) {
+  const [now, setNow] = useState(() => Date.now())
+  const [acting, setActing] = useState(false)
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
   const [order, setOrder] = useState<Awaited<ReturnType<typeof getOrder>> | null>(null)
   const [error, setError] = useState('')
   const [editingPickup, setEditingPickup] = useState(false)
@@ -126,7 +171,7 @@ export function DetailModal({
       const response = await changePickupTime(task.orderId, new Date(newPickupAt).toISOString())
       setOrder(response.order)
       setEditingPickup(false)
-      onPickupChanged?.()
+      onPickupChanged?.(task.orderId, response.order.pickup_at)
     } catch (cause) {
       const requestError = cause as Error & { details?: { earliest_feasible_pickup?: string } }
       const earliest = requestError.details?.earliest_feasible_pickup
@@ -166,42 +211,59 @@ export function DetailModal({
     }, 300)
     return () => window.clearTimeout(timer)
   }, [editingPickup, newPickupAt, order, task.orderId])
-  const stepFor = (batch: NonNullable<typeof order>['batches'][number]) => {
-    if (order?.status === 'RECEIVED') return 1
-    if (order?.status === 'FOLDING_PACKING') return 4
-    if (order?.status === 'READY' || order?.status === 'COMPLETED') return 5
-    if (batch.status === 'COMPLETED') return 4
-    const active = batch.stages.find((stage) => stage.status !== 'COMPLETED')
-    if (!active) return 4
-    return active.stage === 'WASH' ? 2 : 3
-  }
-  const actionLabel = () => {
-    if (!order) return 'Đang tải...'
-    if (order.status === 'RECEIVED') return 'Đã phân loại'
-    if (order.status === 'FOLDING_PACKING') return 'Đã xếp đồ'
-    if (order.status === 'READY') return 'Gửi tin khách'
-    const active =
-      order.batches
-        .find((batch) => batch.batch_id === task.batchId)
-        ?.stages.find((stage) => stage.batch_stage_id === task.batchStageId) ??
-      order.batches.flatMap((batch) => batch.stages).find((stage) => stage.status !== 'COMPLETED')
-    if (!active) return 'Đang xử lý'
-    if (active.status === 'MACHINE_FINISHED') return 'Đã lấy đồ'
-    if (active.status === 'IN_PROGRESS')
-      return active.stage === 'WASH' ? 'Đã giặt xong' : 'Đã sấy xong'
-    return active.stage === 'WASH' ? 'Giặt' : 'Sấy'
+  // The stage the opened task points at, else the first batch that still has work.
+  const targetStage = (() => {
+    if (!order) return null
+    const batch =
+      order.batches.find((item) => item.batch_id === task.batchId) ??
+      order.batches.find((item) => item.stages.some((stage) => stage.status !== 'COMPLETED'))
+    if (!batch) return null
+    const stages = sortStages(batch.stages)
+    const stage =
+      stages.find(
+        (item) => item.batch_stage_id === task.batchStageId && item.status !== 'COMPLETED',
+      ) ?? stages.find((item) => item.status !== 'COMPLETED')
+    return stage ? { batch, stage } : null
+  })()
+  const action: { label: string; value: DetailAction } | null = !order
+    ? null
+    : order.status === 'READY' && task.orderId
+      ? { label: 'Gửi tin khách', value: { kind: 'notify', orderId: task.orderId } }
+      : targetStage
+        ? {
+            label: `Mẻ ${targetStage.batch.batch_no} · ${stageActionLabel(targetStage.stage)}`,
+            value: {
+              kind: 'stage',
+              batchId: targetStage.batch.batch_id,
+              batchStageId: targetStage.stage.batch_stage_id,
+              endpoint: stageEndpoint(targetStage.stage),
+              ...(targetStage.stage.machine_id ? { machineId: targetStage.stage.machine_id } : {}),
+            },
+          }
+        : null
+  const runAction = async () => {
+    if (!action || !onAction) return
+    setActing(true)
+    setError('')
+    try {
+      await onAction(action.value)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Không thể thực hiện thao tác')
+    } finally {
+      setActing(false)
+    }
   }
   const statusText =
-    order?.status === 'READY'
-      ? 'Sẵn sàng lấy'
-      : order?.status === 'FOLDING_PACKING'
-        ? 'Đang xếp đồ'
-        : order?.status === 'WAITING'
-          ? 'Đang xử lý'
-          : 'Mới tiếp nhận'
+    {
+      RECEIVED: 'Mới tiếp nhận',
+      WAITING: 'Đang xử lý',
+      FOLDING_PACKING: 'Đang đóng gói',
+      READY: 'Sẵn sàng lấy',
+      COMPLETED: 'Đã hoàn tất',
+    }[order?.status ?? ''] ?? 'Đang tải'
   return (
     <ModalFrame
-      title={`Đơn #${task.id} · ${task.customer}`}
+      title={`Đơn #${task.id} · ${order?.customer.name ?? task.customer}`}
       onClose={onClose}
       className="compact-detail-modal"
     >
@@ -277,12 +339,15 @@ export function DetailModal({
                           className={`pickup-affected-order ${affected.relation ?? 'affected'}`}
                         >
                           <div className="pickup-affected-order-heading">
-                            <span>#{affected.order_id} · {affected.customer}</span>
+                            <span>
+                              #{affected.order_id} · {affected.customer}
+                            </span>
                             {affected.relation === 'changing' && <em>Đang đổi giờ</em>}
                             {affected.relation === 'same_group' && <em>Cùng nhóm</em>}
                           </div>
                           <small className="pickup-affected-order-time">
-                            Hẹn {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'} · Dự kiến xong {formatDateTime(affected.estimated_at)}
+                            Hẹn {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'}{' '}
+                            · Dự kiến xong {formatDateTime(affected.estimated_at)}
                           </small>
                           <small
                             className={`pickup-affected-order-status ${affected.late && !affected.preexisting_late ? 'late' : ''}`}
@@ -322,33 +387,29 @@ export function DetailModal({
         {error && <p className="queue-error">{error}</p>}
         <div className="compact-groups">
           {order?.batches.map((batch) => {
-            const active = batch.stages.find((stage) => stage.status !== 'COMPLETED')
-            const stageName =
-              active?.stage === 'WASH'
-                ? 'Đang giặt'
-                : active?.stage === 'DRY'
-                  ? 'Đang sấy'
-                  : 'Đã hoàn tất máy'
+            const stages = sortStages(batch.stages)
+            const active = stages.find((stage) => stage.status !== 'COMPLETED')
             const allocatedItems = batch.batch_items
               .map((allocation) => {
                 const item = order.items.find(
                   (candidate) => candidate.order_item_id === allocation.order_item_id,
                 )
-                return item
-                  ? `${item.item_type} · ${item.quantity} món`
-                  : allocation.order_item_id == null
-                    ? ''
-                    : `Nhóm #${allocation.order_item_id}`
+                return item ? `${item.item_type} · ${item.quantity} món` : ''
               })
+              .filter(Boolean)
               .join(', ')
-            const machineName = active?.machine_name ? ` · ${active.machine_name}` : ''
+            const current = active
+              ? `${stageLabels[active.stage] ?? active.stage}${active.machine_name ? ` · ${active.machine_name}` : ''}`
+              : 'Đã hoàn tất'
             return (
               <Progress
                 key={batch.batch_id}
                 title={`Mẻ ${batch.batch_no} · ${batch.weight_kg.toFixed(1)}kg`}
-                status={`${allocatedItems || stageName} · ${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'}${machineName}`}
+                status={`${allocatedItems ? `${allocatedItems} · ` : ''}${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'} · ${current}`}
                 tone={active?.stage === 'DRY' ? 'amber' : 'blue'}
-                current={stepFor(batch)}
+                stages={stages}
+                activeId={active?.batch_stage_id ?? null}
+                now={now}
               />
             )
           })}
@@ -367,114 +428,82 @@ export function DetailModal({
         <button className="secondary" onClick={onClose}>
           Đóng
         </button>
-        <button className="primary" disabled={!onAction || !order} onClick={onAction}>
-          {actionLabel()} <ChevronRight size={14} />
-        </button>
+        {action && onAction && (
+          <button className="primary" disabled={acting} onClick={() => void runAction()}>
+            {acting ? 'Đang cập nhật...' : action.label} <ChevronRight size={14} />
+          </button>
+        )}
       </footer>
     </ModalFrame>
   )
 }
+// Sorting → Washing → Drying → Packing timeline of one batch. Unfinished stages show
+// their planned window; finished ones show a checkmark and the actual completion time.
 function Progress({
   title,
   status,
   tone,
-  current,
+  stages,
+  activeId,
+  now,
 }: {
   title: string
   status: string
   tone: 'blue' | 'amber'
-  current: number
+  stages: OrderStage[]
+  activeId: number | null
+  now: number
 }) {
-  const steps = ['Tiếp nhận', 'Phân loại', 'Giặt', 'Sấy', 'Xếp đồ']
+  const lastDone = stages.reduce(
+    (last, stage, index) => (stage.status === 'COMPLETED' ? index : last),
+    -1,
+  )
+  const progress = stages.length > 1 ? Math.max(0, lastDone) / (stages.length - 1) : 1
   return (
     <section className={`progress-visual ${tone}`}>
       <div className="progress-visual-heading">
         <b>{title}</b>
         <span>{status}</span>
       </div>
-      <div className={`visual-stepper current-${current}`}>
-        {steps.map((step, index) => (
-          <div
-            className={`visual-step ${index < current ? 'done' : index === current ? 'active' : ''}`}
-            key={step}
-          >
-            <i>{index < current ? '✓' : index + 1}</i>
-            <small>{step}</small>
-          </div>
-        ))}
+      <div
+        className="visual-stepper"
+        style={
+          {
+            '--steps': stages.length,
+            '--progress': `${Math.round(progress * 100)}%`,
+          } as React.CSSProperties
+        }
+      >
+        {stages.map((stage, index) => {
+          const done = stage.status === 'COMPLETED'
+          const timing = liveTiming(stage, now, stage.stage)
+          const state = done
+            ? 'done'
+            : stage.status === 'IN_PROGRESS'
+              ? 'running'
+              : stage.status === 'MACHINE_FINISHED'
+                ? 'waiting'
+                : stage.batch_stage_id === activeId
+                  ? 'current'
+                  : 'planned'
+          return (
+            <div
+              className={`visual-step ${state} ${statusClass(timing?.status) === 'late' ? 'late' : ''}`}
+              key={stage.batch_stage_id}
+            >
+              <i>{done ? '✓' : index + 1}</i>
+              <small>{stageLabels[stage.stage] ?? stage.stage}</small>
+              <em>
+                {done
+                  ? `Xong ${formatClock(stage.actual_ended_at)}`
+                  : `${stage.machine_name ? `${stage.machine_name} · ` : ''}${formatClock(stage.planned_start_at)}–${formatClock(stage.planned_end_at)}`}
+              </em>
+              {timing && <span>{timing.label}</span>}
+            </div>
+          )
+        })}
       </div>
     </section>
-  )
-}
-
-export function ScenarioModal({
-  type,
-  onClose,
-  onConfirm,
-}: {
-  type: 'reschedule' | 'delay' | 'notify'
-  onClose: () => void
-  onConfirm: () => void
-}) {
-  const content = {
-    reschedule: {
-      title: 'Chỉnh giờ hẹn',
-      heading: 'Đơn #128 · Trần Minh Anh',
-      action: 'Xác nhận',
-      message: 'Các đơn khác vẫn đúng giờ ✓. Hệ thống sẽ tự động đưa đơn lên đầu hàng đợi.',
-    },
-    delay: {
-      title: '⚠ Đơn #123 có nguy cơ trễ',
-      heading: 'Theo dõi tiến độ và cập nhật khách hàng',
-      action: 'Đổi giờ hẹn sang 15:30',
-      message: 'Dự kiến hoàn tất 15:20 (+20p). Giờ đề xuất tối ưu: 15:30.',
-    },
-    notify: {
-      title: 'Gửi tin khách hàng',
-      heading: 'Đơn #123 · Đã hoàn tất toàn bộ',
-      action: 'Gửi tin khách',
-      message: 'Khách hàng sẽ nhận được thông báo qua Zalo OA khi xác nhận.',
-    },
-  }[type]
-  return (
-    <ModalFrame title={content.title} onClose={onClose}>
-      <div className={`scenario-body ${type}`}>
-        <h3>{content.heading}</h3>
-        <div className="scenario-result">
-          <Clock3 size={18} />
-          <span>{content.message}</span>
-        </div>
-        {type === 'reschedule' && (
-          <div className="time-edit">
-            <label>
-              Giờ hiện tại
-              <input defaultValue="15:30" />
-            </label>
-            <label>
-              Giờ mới hẹn
-              <input defaultValue="14:30" />
-            </label>
-          </div>
-        )}
-        {type === 'delay' && (
-          <div className="suggested-time">
-            <b>GIỜ ĐỀ XUẤT TỐI ƯU</b>
-            <strong>15:30</strong>
-          </div>
-        )}
-        {type === 'notify' && (
-          <textarea defaultValue="Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả." />
-        )}
-      </div>
-      <footer>
-        <button className="secondary" onClick={onClose}>
-          Hủy
-        </button>
-        <button className="primary" onClick={onConfirm}>
-          {content.action}
-        </button>
-      </footer>
-    </ModalFrame>
   )
 }
 
@@ -756,7 +785,14 @@ export function CreateOrderModal({
               </label>
               <label>
                 Tổng tiền
-                <input type="number" min="0" step="1000" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} placeholder="Tự tính theo kg" />
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  placeholder="Tự tính theo kg"
+                />
               </label>
             </div>
             <div className="field-block">
@@ -885,11 +921,16 @@ export function CreateOrderModal({
                     <strong>{batch.weightKg.toFixed(1)} kg</strong>
                   </div>
                   <div className="schedule-stages">
-                    {batch.stages.map((stage) => (
-                      <div className="schedule-stage" key={`${batch.batchNo}-${stage.stage}`}>
-                        <i>{stage.stage === 'WASH' ? 'Giặt' : 'Sấy'}</i>
+                    {sortStages(batch.stages).map((stage) => (
+                      <div
+                        className={`schedule-stage ${stage.machineId === null ? 'manual' : ''}`}
+                        key={`${batch.batchNo}-${stage.stage}`}
+                      >
+                        <i>{stageLabels[stage.stage] ?? stage.stage}</i>
                         <b>
-                          {stage.stage === 'WASH' ? 'Máy giặt' : 'Máy sấy'} #{stage.machineId}
+                          {stage.machineId === null
+                            ? 'Thủ công'
+                            : `${stage.stage === 'WASH' ? 'Máy giặt' : 'Máy sấy'} #${stage.machineId}`}
                         </b>
                         <span>
                           {new Date(stage.plannedStartAt).toLocaleTimeString('vi-VN', {

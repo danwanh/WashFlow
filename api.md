@@ -54,9 +54,36 @@ stage statuses.
 
 `WAITING`, `WASHING`, `DRYING`, `WAITING_FOR_UNLOAD`, `COMPLETED`
 
-### Stage statuses
+### Stages
 
-`PLANNED`, `IN_PROGRESS`, `MACHINE_FINISHED`, `COMPLETED`
+Every batch has the stages `CLASSIFY` (sorting), then `WASH` and/or `DRY`
+depending on the service, then `PACKING`. `CLASSIFY` and `PACKING` are manual
+stages with no machine (`machine_id: null`). `CLASSIFY` starts when the order
+is confirmed.
+
+Stage statuses: `PLANNED`, `IN_PROGRESS`, `MACHINE_FINISHED`, `COMPLETED`.
+Manual stages go straight from `PLANNED` to `COMPLETED`.
+
+### Stage timing
+
+Queue tasks (`GET /api/queue`) and every stage in the order resource carry
+timing fields computed by `backend/src/services/timing.ts`: `phase`
+(`PLANNED`, `RUNNING`, `WAITING_UNLOAD`, `DONE`), `timing_status` (`ON_TIME`,
+`APPROACHING`, `LATE`, `COMPLETED_ON_TIME`, `COMPLETED_LATE`),
+`expected_start_at`, `expected_end_at`, `waiting_since`, `late_at`,
+`approaching_at`, `delay_minutes`, `remaining_minutes`, and a Vietnamese
+`timing_label`. Only a batch's next unfinished stage is measured:
+
+| Stage | Late when |
+|---|---|
+| `PLANNED` `WASH`/`DRY` | `planned_start_at` has passed |
+| `PLANNED` `CLASSIFY`/`PACKING` | `planned_end_at` has passed |
+| `IN_PROGRESS` | `actual_started_at` + planned length has passed |
+| `MACHINE_FINISHED` | waiting longer than `ALERT_UNLOAD_THRESHOLD_MINUTES` (15) |
+| `COMPLETED` | `actual_ended_at` was after `planned_end_at` |
+
+Queue tasks also carry `order_late_minutes` (how far the ETA, or now once the
+pickup time has passed, is beyond the pickup time).
 
 ### Machine types and statuses
 
@@ -225,35 +252,24 @@ Request:
 
 ## Physical Workflow
 
-### Confirm classification
+All batch work goes through the stage endpoints below; each returns the order
+resource. After every transition the order status is derived from its stages:
 
-`POST /api/orders/:orderId/classification`
+| Condition | Order status |
+|---|---|
+| Some `CLASSIFY` stage not completed | `RECEIVED` |
+| All `CLASSIFY` completed, machine stages remain | `WAITING` (sets `classified_at`) |
+| Only `PACKING` stages remain | `FOLDING_PACKING` |
+| Every stage completed | `READY` (sets `packing_completed_at`, `ready_at`) |
 
-Confirms the proposed physical batches:
-
-```json
-{
-  "batches": [
-    {
-      "batch_id": 12,
-      "items": [
-        { "order_item_id": 44, "weight_kg": 2.4 }
-      ]
-    }
-  ]
-}
-```
-
-If composition changes, the server validates exact `BATCH_ITEMS` weight
-allocation, reschedules not-started stages, recalculates ETA, and reruns late-
-risk checks. On confirmation, batches move to `WAITING` and the order remains
-in its appropriate aggregate state.
+A stage can only be acted on once every earlier stage of its batch is
+`COMPLETED` (`400 INVALID_STATE` otherwise).
 
 ### Start a machine stage
 
 `POST /api/batches/:batchId/stages/:stageId/start`
 
-Request:
+Request (optional; defaults to the planned machine):
 
 ```json
 {
@@ -264,38 +280,33 @@ Request:
 Preconditions:
 
 - The batch is `WAITING`.
-- The stage is `PLANNED`.
-- The machine type matches the stage.
-- The machine is operational and has sufficient capacity.
+- The stage is a `PLANNED` `WASH` or `DRY` stage.
+- The machine type matches the stage, the machine is `AVAILABLE`, and it has
+  sufficient capacity (`409 MACHINE_UNAVAILABLE` otherwise).
 
 On success, the stage becomes `IN_PROGRESS`, `actual_started_at` is set, the
 batch becomes `WASHING` or `DRYING`, and the machine becomes `BUSY`. The
 assignment is locked and non-preemptive.
 
-### Mark machine cycle finished
+### Mark machine cycle finished / complete sorting or packing
 
 `POST /api/batches/:batchId/stages/:stageId/machine-finished`
 
-Sets `actual_machine_finished_at`, changes the stage to `MACHINE_FINISHED`, and
-changes the batch to `WAITING_FOR_UNLOAD`. The machine remains `BUSY` until
-unload is confirmed.
+For an `IN_PROGRESS` `WASH`/`DRY` stage: sets `actual_machine_finished_at`,
+changes the stage to `MACHINE_FINISHED`, and changes the batch to
+`WAITING_FOR_UNLOAD`. The machine remains `BUSY` until unload is confirmed.
+
+For a `PLANNED` `CLASSIFY` or `PACKING` stage: completes it
+(`actual_ended_at` = now). The batch moves to `WAITING` on its next stage, or
+to `COMPLETED` after `PACKING`. All open orders are then rescheduled.
 
 ### Confirm unload
 
 `POST /api/batches/:batchId/stages/:stageId/unload`
 
 Sets `actual_ended_at`, changes the stage to `COMPLETED`, and makes the machine
-`AVAILABLE`. The batch becomes `WAITING` if another machine stage remains, or
-`COMPLETED` otherwise. This event may trigger rescheduling.
-
-### Confirm packing
-
-`POST /api/orders/:orderId/packing`
-
-No request body is required. All batches must be machine-complete. The server
-sets `packing_completed_at` and `ready_at`, then changes the order to `READY`.
-
-It must reject the request while any batch has unfinished machine work.
+`AVAILABLE`. The batch moves to `WAITING` on its next stage (`DRY` or
+`PACKING`). All open orders are then rescheduled.
 
 ## Notifications
 
@@ -447,9 +458,9 @@ Implementations must preserve these rules:
 4. Existing accepted deadlines must remain protected during planning.
 5. Only `PLANNED` stages may be reassigned; `IN_PROGRESS` stages are locked.
 6. A machine cycle does not free a machine until unload confirmation.
-7. Multi-batch ETA is the latest batch ETA plus packing time, not summed duration.
+7. Order ETA is the latest end of a batch's `PACKING` stage, not summed duration.
 8. Trial plans do not mutate committed data until confirmed.
-9. `READY` requires all machine work and packing to be complete.
+9. `READY` requires every batch stage, including `PACKING`, to be complete.
 10. A failed final notification leaves the order in `READY`.
 11. Alerts are not order statuses.
 12. Rescheduling is event-driven, not continuous.

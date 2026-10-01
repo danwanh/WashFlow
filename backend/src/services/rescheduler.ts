@@ -1,8 +1,15 @@
 import { prisma } from './api.js'
 import type { Prisma } from '../../generated/prisma/client.js'
+import { isManualStage, stageRank } from './timing.js'
 
 type Reason = string
-const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
+const stageOrder = stageRank
+const manualMinutes = (stage: string) =>
+  Number(
+    stage === 'CLASSIFY'
+      ? (process.env.CLASSIFY_OFFSET_MINUTES ?? 10)
+      : (process.env.PACKING_OFFSET_MINUTES ?? 15),
+  ) * 60_000
 const operational = (status: string) =>
   !['OFFLINE', 'MAINTENANCE'].includes(status)
 
@@ -134,6 +141,32 @@ export async function rescheduleWithClient(
           now.getTime())
         : (previousStage.plannedEndAt?.getTime() ?? now.getTime())
       : now.getTime()
+    // Keep the in-memory stage in step with the database so the next stage of the
+    // batch and the ETA below use the new times.
+    const applyPlan = async (machineId: number | null, start: number, end: number) => {
+      if (
+        selected.stage.machineId !== machineId ||
+        selected.stage.plannedStartAt?.getTime() !== start ||
+        selected.stage.plannedEndAt?.getTime() !== end
+      ) {
+        changedStageIds.push(selected.stage.batchStageId)
+        changedOrderIds.add(selected.order.orderId)
+        await tx.batchStage.update({
+          where: { batchStageId: selected.stage.batchStageId },
+          data: { machineId, plannedStartAt: new Date(start), plannedEndAt: new Date(end) },
+        })
+      }
+      selected.stage.machineId = machineId
+      selected.stage.plannedStartAt = new Date(start)
+      selected.stage.plannedEndAt = new Date(end)
+      scheduled.add(selected.stage.batchStageId)
+    }
+    if (isManualStage(selected.stage.stage)) {
+      // Sorting that already started keeps its real start (it begins when the order is accepted).
+      const start = selected.stage.actualStartedAt?.getTime() ?? readyAt
+      await applyPlan(null, start, start + manualMinutes(selected.stage.stage))
+      continue
+    }
     const candidates = machines.filter(
       (machine) =>
         operational(machine.status) &&
@@ -166,23 +199,7 @@ export async function rescheduleWithClient(
     )
     const end = start + machine.processingMinutes * 60_000
     availability.set(machine.machineId, end)
-    if (
-      selected.stage.machineId !== machine.machineId ||
-      selected.stage.plannedStartAt?.getTime() !== start ||
-      selected.stage.plannedEndAt?.getTime() !== end
-    ) {
-      changedStageIds.push(selected.stage.batchStageId)
-      changedOrderIds.add(selected.order.orderId)
-      await tx.batchStage.update({
-        where: { batchStageId: selected.stage.batchStageId },
-        data: {
-          machineId: machine.machineId,
-          plannedStartAt: new Date(start),
-          plannedEndAt: new Date(end),
-        },
-      })
-    }
-    scheduled.add(selected.stage.batchStageId)
+    await applyPlan(machine.machineId, start, end)
   }
 
   const affectedOrders: Array<{

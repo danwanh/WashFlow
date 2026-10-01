@@ -8,14 +8,12 @@ import type { Task } from '../types/task'
 export function AppRoutes({
   onCreate,
   onDetail,
-  onScenario,
-  onToast,
+  onChanged,
   refreshToken,
 }: {
   onCreate: () => void
   onDetail: (task: Task) => void
-  onScenario: (type: 'reschedule' | 'delay') => void
-  onToast: () => void
+  onChanged: () => void
   refreshToken: number
 }) {
   return (
@@ -27,8 +25,7 @@ export function AppRoutes({
           <QueuePage
             onCreate={onCreate}
             onDetail={onDetail}
-            onScenario={onScenario}
-            onToast={onToast}
+            onChanged={onChanged}
             refreshToken={refreshToken}
           />
         }

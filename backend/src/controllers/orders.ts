@@ -15,6 +15,7 @@ import {
 } from '../services/api.js'
 import crypto from 'node:crypto'
 import { rescheduleAll, rescheduleWithClient } from '../services/rescheduler.js'
+import { isManualStage } from '../services/timing.js'
 
 export async function plan(req: Request, res: Response) {
   const b = getBody(req)
@@ -176,9 +177,12 @@ export async function create(req: Request, res: Response) {
           data: {
             batchId: batch.batchId,
             stage: stage.stage,
-            machineId: stage.machineId,
+            // Sorting and packing are manual and never tied to a machine.
+            machineId: isManualStage(stage.stage) ? null : stage.machineId,
             plannedStartAt: new Date(stage.plannedStartAt),
             plannedEndAt: new Date(stage.plannedEndAt),
+            // Sorting starts as soon as the order is accepted.
+            actualStartedAt: stage.stage === 'CLASSIFY' ? new Date() : null,
           },
         })
     }
@@ -428,56 +432,4 @@ export async function reschedule(req: Request, res: Response) {
     affected_orders: result.affectedOrders,
     changed_stage_ids: result.changedStageIds,
   })
-}
-export async function classification(req: Request, res: Response) {
-  const orderId = getId(req.params.orderId)
-  const order = await getOrder(orderId)
-  if (!order) fail(404, 'NOT_FOUND', 'Order not found')
-  if (order.status !== 'RECEIVED')
-    fail(400, 'INVALID_STATE', 'Order is not waiting for classification')
-  const batches = Array.isArray(getBody(req).batches)
-    ? getBody(req).batches
-    : order.batches.map((batch) => ({
-        batch_id: batch.batchId,
-        items: batch.items.map((item) => ({
-          order_item_id: item.orderItemId,
-          weight_kg: Number(item.weightKg),
-        })),
-      }))
-  for (const p of batches) {
-    const batch = order.batches.find((x) => x.batchId === p.batch_id)
-    if (!batch) fail(404, 'NOT_FOUND', 'Batch not found')
-    if (batch.stages.some((s) => s.status === 'IN_PROGRESS'))
-      fail(409, 'STAGE_LOCKED', 'In-progress stages cannot be reclassified')
-    const total = p.items.reduce(
-      (sum: number, item: any) => sum + Number(item.weight_kg),
-      0,
-    )
-    if (Math.abs(total - Number(batch.weightKg)) > 0.01)
-      fail(
-        400,
-        'INVALID_ALLOCATION',
-        'Batch item weights must equal the batch weight',
-      )
-  }
-  const updated = await prisma.$transaction(async (tx) => {
-    for (const p of batches) {
-      await tx.batchItem.deleteMany({ where: { batchId: p.batch_id } })
-      for (const item of p.items)
-        await tx.batchItem.create({
-          data: {
-            batchId: p.batch_id,
-            orderItemId: Number(item.order_item_id),
-            weightKg: Number(item.weight_kg),
-          },
-        })
-    }
-    return tx.laundryOrder.update({
-      where: { orderId },
-      data: { classifiedAt: new Date(), status: 'WAITING' },
-      include: orderInclude,
-    })
-  })
-  await rescheduleAll('BATCH_COMPOSITION_CHANGED')
-  res.json(orderResource(await getOrder(orderId)))
 }

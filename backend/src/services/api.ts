@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { PrismaClient } from '../../generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { batchTimings } from './timing.js'
 
 export const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -71,6 +72,10 @@ export function orderResource(order: any) {
     customer_id: order.customerId,
     service_type: order.serviceType,
     special_note: order.specialNote,
+    classified_at: order.classifiedAt?.toISOString() ?? null,
+    packing_completed_at: order.packingCompletedAt?.toISOString() ?? null,
+    ready_at: order.readyAt?.toISOString() ?? null,
+    completed_at: order.completedAt?.toISOString() ?? null,
     items: order.items.map((x: any) => ({
       order_item_id: x.orderItemId,
       item_type: x.itemType,
@@ -89,7 +94,8 @@ export function orderResource(order: any) {
       estimated_at: b.estimatedAt?.toISOString() ?? null,
       completed_at: b.completedAt?.toISOString() ?? null,
       batch_items: b.items,
-      stages: b.stages.map((s: any) => ({
+      // Workflow order (sorting, washing, drying, packing) with wait/late timing per stage.
+      stages: batchTimings<any>(b.stages, Date.now()).map(({ stage: s, timing }) => ({
         batch_stage_id: s.batchStageId,
         stage: s.stage,
         status: s.status,
@@ -101,6 +107,7 @@ export function orderResource(order: any) {
         actual_machine_finished_at:
           s.actualMachineFinishedAt?.toISOString() ?? null,
         actual_ended_at: s.actualEndedAt?.toISOString() ?? null,
+        ...timing,
       })),
     })),
     alerts: order.alerts,

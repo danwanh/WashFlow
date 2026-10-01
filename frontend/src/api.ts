@@ -25,8 +25,8 @@ export type PlanResponse = {
     group: string
     items: Array<{ itemIndex: number; weightKg: number }>
     stages: Array<{
-      stage: 'WASH' | 'DRY'
-      machineId: number
+      stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
+      machineId: number | null
       plannedStartAt: string
       plannedEndAt: string
     }>
@@ -43,7 +43,27 @@ export type CreatedOrder = {
   batches: Array<{ batch_id: number; batch_no: number }>
 }
 
-export type QueueTask = {
+// Wait/late timing computed by backend/src/services/timing.ts; utils/timing.ts
+// refreshes the minute counts every second from these timestamps.
+export type StageTiming = {
+  phase: 'PLANNED' | 'RUNNING' | 'WAITING_UNLOAD' | 'DONE'
+  timing_status: 'ON_TIME' | 'APPROACHING' | 'LATE' | 'COMPLETED_ON_TIME' | 'COMPLETED_LATE'
+  expected_start_at: string | null
+  expected_end_at: string | null
+  waiting_since: string | null
+  late_at: string | null
+  approaching_at: string | null
+  delay_minutes: number
+  remaining_minutes: number
+  timing_label: string
+}
+
+export type StageName = 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
+
+export type QueueTask = StageTiming & {
+  stage?: StageName
+  order_late_minutes: number
+  actual_ended_at?: string | null
   order_id: number
   batch_id: number | null
   batch_stage_id: number | null
@@ -54,9 +74,9 @@ export type QueueTask = {
   group: string
   detail: string
   due: string
-  status: string
+  batch_status: string | null
   order_status: string
-  stage_status?: string
+  stage_status?: string | null
   priority: number
   slack_minutes: number | null
   machine_id: number | null
@@ -157,6 +177,11 @@ export type OrderDetails = {
   pickup_at: string
   estimated_at: string
   priority: number
+  created_at: string
+  classified_at: string | null
+  packing_completed_at: string | null
+  ready_at: string | null
+  completed_at: string | null
   items: Array<{
     order_item_id: number
     item_type: string
@@ -170,15 +195,20 @@ export type OrderDetails = {
     status: string
     current_stage: string | null
     batch_items: Array<{ order_item_id: number; weight_kg: number }>
-    stages: Array<{
-      batch_stage_id: number
-      stage: 'WASH' | 'DRY'
-      status: string
-      machine_id: number | null
-      machine_name: string | null
-      planned_end_at: string | null
-      actual_machine_finished_at: string | null
-    }>
+    stages: Array<
+      StageTiming & {
+        batch_stage_id: number
+        stage: StageName
+        status: string
+        machine_id: number | null
+        machine_name: string | null
+        planned_start_at: string | null
+        planned_end_at: string | null
+        actual_started_at: string | null
+        actual_machine_finished_at: string | null
+        actual_ended_at: string | null
+      }
+    >
   }>
 }
 
@@ -325,14 +355,6 @@ export function updateStage(
     method: 'POST',
     body: JSON.stringify(machineId === undefined ? {} : { machine_id: machineId }),
   })
-}
-
-export function confirmClassification(orderId: number) {
-  return request(`/orders/${orderId}/classification`, { method: 'POST', body: JSON.stringify({}) })
-}
-
-export function completePacking(orderId: number) {
-  return request(`/orders/${orderId}/packing`, { method: 'POST', body: JSON.stringify({}) })
 }
 
 export function draftReadyNotification(orderId: number) {

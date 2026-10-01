@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express'
 import { prisma } from '../services/api.js'
+import { batchTimings, isManualStage } from '../services/timing.js'
 
-const stageLabel = (stage: string) => (stage === 'WASH' ? 'GIẶT' : 'SẤY')
+const MINUTE = 60_000
+const machineLabel = (stage: string) => (stage === 'WASH' ? 'GIẶT' : 'SẤY')
 const machineType = (stage: string) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
-const stageOrder = (stage: string) => (stage === 'WASH' ? 0 : 1)
 const stageStatusLabel = (status: string) =>
   ({
     PLANNED: 'Chờ vào máy',
@@ -11,9 +12,11 @@ const stageStatusLabel = (status: string) =>
     MACHINE_FINISHED: 'Đã chạy xong, chờ dỡ',
     COMPLETED: 'Hoàn tất',
   })[status] ?? 'Đang xử lý'
+const minutes = (ms: number) => Math.max(0, Math.round(ms / MINUTE))
 
 export async function list(_req: Request, res: Response) {
   const now = new Date()
+  const readyThreshold = Number(process.env.ALERT_READY_THRESHOLD_MINUTES ?? 30)
   const orders = await prisma.laundryOrder.findMany({
     where: { status: { not: 'COMPLETED' } },
     include: {
@@ -25,128 +28,146 @@ export async function list(_req: Request, res: Response) {
 
   const tasks: any[] = []
   for (const order of orders) {
-    const addOrderTask = (
-      action: string,
-      actionType: string,
-      button: string,
-      detail: string,
-    ) => {
+    // How far the ETA (or now, once pickup has passed) is beyond the pickup time.
+    const orderLateMinutes = minutes(
+      Math.max(order.estimatedAt.getTime(), now.getTime()) - order.pickupAt.getTime(),
+    )
+    const common = {
+      order_id: order.orderId,
+      rank: 0,
+      customer: order.customer.name,
+      due: order.pickupAt.toISOString(),
+      order_status: order.status,
+      priority: order.priority,
+      alert_count: order.alerts.length,
+      estimated_at: order.estimatedAt.toISOString(),
+      order_late_minutes: orderLateMinutes,
+    }
+
+    // Sorting and packing are per-batch stages; only the final notification is order-level.
+    if (order.status === 'READY') {
+      const readySince = (order.readyAt ?? order.updatedAt).getTime()
+      const lateAt = readySince + readyThreshold * MINUTE
       tasks.push({
-        order_id: order.orderId,
+        ...common,
         batch_id: null,
         batch_stage_id: null,
-        rank: 0,
-        action,
-        action_type: actionType,
-        customer: order.customer.name,
+        action: 'CHỜ GỬI TIN KHÁCH',
+        action_type: 'NOTIFY',
         group: 'Đơn hàng',
-        detail,
-        due: order.pickupAt.toISOString(),
-        status: order.status,
-        order_status: order.status,
-        priority: order.priority,
-        slack_minutes: null,
+        detail: 'Đơn đã sẵn sàng',
+        batch_status: null,
+        stage_status: null,
+        // No work left, so the slack is simply the time until pickup (negative once overdue).
+        slack_minutes: Math.round((order.pickupAt.getTime() - now.getTime()) / MINUTE),
         machine_id: null,
         machine_name: null,
-        button,
-        alert_count: order.alerts.length,
+        button: 'Gửi tin khách',
         weight_kg: null,
-        estimated_at: order.estimatedAt.toISOString(),
         planned_start_at: null,
         planned_end_at: null,
         actual_started_at: null,
         actual_machine_finished_at: null,
+        phase: 'PLANNED',
+        timing_status: now.getTime() > lateAt ? 'LATE' : 'ON_TIME',
+        expected_start_at: null,
+        expected_end_at: null,
+        waiting_since: new Date(readySince).toISOString(),
+        late_at: new Date(lateAt).toISOString(),
+        approaching_at: null,
+        delay_minutes: minutes(now.getTime() - lateAt),
+        remaining_minutes: 0,
+        timing_label: `Chờ gửi tin ${minutes(now.getTime() - readySince)} phút`,
       })
     }
-    if (order.status === 'RECEIVED')
-      addOrderTask('PHÂN LOẠI', 'CLASSIFY', 'Xong', 'Xác nhận các mẻ đồ')
-    if (order.status === 'FOLDING_PACKING')
-      addOrderTask('XẾP ĐỒ', 'PACK', 'Xong', 'Đóng gói toàn bộ đơn')
-    if (order.status === 'READY')
-      addOrderTask('CHỜ GỬI TIN KHÁCH', 'NOTIFY', 'Gửi tin khách', 'Đơn đã sẵn sàng')
 
-    if (order.status === 'RECEIVED') continue
     for (const batch of order.batches) {
-      const stages = [...batch.stages].sort(
-        (a, b) => stageOrder(a.stage) - stageOrder(b.stage),
-      )
-      const pending = stages.findIndex(
-        (stage, index) =>
-          stage.status !== 'COMPLETED' &&
-          (index === 0 || stages[index - 1]?.status === 'COMPLETED'),
-      )
+      const timings = batchTimings(batch.stages, now.getTime())
+      const pending = timings.findIndex(({ stage }) => stage.status !== 'COMPLETED')
       if (pending < 0) continue
-      const stage = stages[pending]!
-      const remainingMinutes = stages
-        .slice(pending)
-        .reduce(
-          (sum, item) =>
-            sum +
-            (item.plannedEndAt && item.plannedStartAt
-              ? (item.plannedEndAt.getTime() - item.plannedStartAt.getTime()) /
-                60000
-              : 0),
-          0,
-        )
+      const { stage, timing } = timings[pending]!
+      // Work still ahead of the batch: only the unfinished part of the current stage, then
+      // the full planned length of every later stage.
+      const remainingMinutes = timings.slice(pending).reduce((sum, { stage: item }) => {
+        const duration =
+          item.plannedEndAt && item.plannedStartAt
+            ? item.plannedEndAt.getTime() - item.plannedStartAt.getTime()
+            : 0
+        if (item.status === 'MACHINE_FINISHED') return sum
+        if (item.status === 'IN_PROGRESS' && item.actualStartedAt)
+          return (
+            sum + Math.max(0, item.actualStartedAt.getTime() + duration - now.getTime()) / MINUTE
+          )
+        return sum + duration / MINUTE
+      }, 0)
       const slackMinutes = Math.round(
-        (order.pickupAt.getTime() - now.getTime()) / 60000 - remainingMinutes,
+        (order.pickupAt.getTime() - now.getTime()) / MINUTE - remainingMinutes,
       )
-      const label = stageLabel(stage.stage)
+      const manual = isManualStage(stage.stage)
       const machine = stage.machine
       const action =
-        stage.status === 'MACHINE_FINISHED'
-          ? `LẤY ĐỒ RA · ${machine?.name ?? label}`
-          : stage.status === 'IN_PROGRESS'
-            ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? label}`
-            : `VÀO MÁY ${label} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
+        stage.stage === 'CLASSIFY'
+          ? 'PHÂN LOẠI'
+          : stage.stage === 'PACKING'
+            ? 'XẾP ĐỒ'
+            : stage.status === 'MACHINE_FINISHED'
+              ? `LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
+              : stage.status === 'IN_PROGRESS'
+                ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
+                : `VÀO MÁY ${machineLabel(stage.stage)} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
       const actionType =
-        stage.status === 'MACHINE_FINISHED'
-          ? 'UNLOAD'
-          : stage.status === 'IN_PROGRESS'
-            ? 'MACHINE_FINISHED'
-            : 'START'
-      const button =
-        stage.status === 'MACHINE_FINISHED'
+        stage.stage === 'CLASSIFY'
+          ? 'CLASSIFY'
+          : stage.stage === 'PACKING'
+            ? 'PACK'
+            : stage.status === 'MACHINE_FINISHED'
+              ? 'UNLOAD'
+              : stage.status === 'IN_PROGRESS'
+                ? 'MACHINE_FINISHED'
+                : 'START'
+      const button = manual
+        ? 'Xong'
+        : stage.status === 'MACHINE_FINISHED'
           ? 'Xong'
           : stage.status === 'IN_PROGRESS'
             ? 'Máy xong'
             : null
       tasks.push({
-        order_id: order.orderId,
+        ...common,
         batch_id: batch.batchId,
         batch_stage_id: stage.batchStageId,
-        rank: 0,
+        stage: stage.stage,
         action,
         action_type: actionType,
-        customer: order.customer.name,
         group: `Mẻ ${batch.batchNo}`,
-        detail: `${Number(batch.weightKg).toFixed(1)}kg · ${stageStatusLabel(stage.status)}`,
+        detail: `${Number(batch.weightKg).toFixed(1)}kg · ${
+          stage.stage === 'CLASSIFY'
+            ? 'Chờ phân loại'
+            : stage.stage === 'PACKING'
+              ? 'Chờ xếp đồ'
+              : stageStatusLabel(stage.status)
+        }`,
         weight_kg: Number(batch.weightKg),
-        estimated_at: order.estimatedAt.toISOString(),
         planned_start_at: stage.plannedStartAt?.toISOString() ?? null,
         planned_end_at: stage.plannedEndAt?.toISOString() ?? null,
         actual_started_at: stage.actualStartedAt?.toISOString() ?? null,
-        actual_machine_finished_at:
-          stage.actualMachineFinishedAt?.toISOString() ?? null,
-        due: order.pickupAt.toISOString(),
-        status: batch.status,
-        order_status: order.status,
+        actual_machine_finished_at: stage.actualMachineFinishedAt?.toISOString() ?? null,
+        actual_ended_at: stage.actualEndedAt?.toISOString() ?? null,
+        batch_status: batch.status,
         stage_status: stage.status,
-        priority: order.priority,
         slack_minutes: slackMinutes,
         machine_id: stage.machineId,
         machine_name: machine?.name ?? null,
-        machine_type: machineType(stage.stage),
+        machine_type: manual ? undefined : machineType(stage.stage),
         button,
-        alert_count: order.alerts.length,
+        ...timing,
       })
     }
   }
 
   tasks.sort(
     (a, b) =>
-      (a.slack_minutes ?? Number.MAX_SAFE_INTEGER) -
-        (b.slack_minutes ?? Number.MAX_SAFE_INTEGER) ||
+      (a.slack_minutes ?? Number.MAX_SAFE_INTEGER) - (b.slack_minutes ?? Number.MAX_SAFE_INTEGER) ||
       b.priority - a.priority ||
       new Date(a.due).getTime() - new Date(b.due).getTime() ||
       a.order_id - b.order_id,

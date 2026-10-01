@@ -2,27 +2,18 @@ import { Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { MachinePane, TaskCard } from '../components/queue/QueueComponents'
 import { ConfirmActionModal, NotificationModal } from '../components/modals/ModalComponents'
-import {
-  completePacking,
-  confirmClassification,
-  getQueue,
-  sendReadyNotification,
-  updateStage,
-  type QueueResponse,
-} from '../api'
+import { getQueue, sendReadyNotification, updateStage, type QueueResponse } from '../api'
 import type { Task } from '../types/task'
 
 export function QueuePage({
   onCreate,
   onDetail,
-  onScenario,
-  onToast,
+  onChanged,
   refreshToken,
 }: {
   onCreate: () => void
   onDetail: (task: Task) => void
-  onScenario: (type: 'reschedule' | 'delay') => void
-  onToast: () => void
+  onChanged: () => void
   refreshToken: number
 }) {
   const [filter, setFilter] = useState('all')
@@ -68,15 +59,15 @@ export function QueuePage({
         : task.action_type === 'PACK'
           ? 'amber'
           : task.stage_status === 'MACHINE_FINISHED'
-        ? 'amber'
-        : task.stage_status === 'IN_PROGRESS'
-          ? 'blue'
-          : 'slate',
+            ? 'amber'
+            : task.stage_status === 'IN_PROGRESS'
+              ? 'blue'
+              : 'slate',
     button: task.button ?? undefined,
     orderId: task.order_id,
     batchId: task.batch_id,
     batchStageId: task.batch_stage_id,
-    stageStatus: task.stage_status,
+    stageStatus: task.stage_status ?? undefined,
     machineId: task.machine_id,
     machineType: task.machine_type,
     slackMinutes: task.slack_minutes,
@@ -87,14 +78,20 @@ export function QueuePage({
     plannedEndAt: task.planned_end_at,
     actualStartedAt: task.actual_started_at,
     actualMachineFinishedAt: task.actual_machine_finished_at,
+    stage: task.stage,
+    orderLateMinutes: task.order_late_minutes,
+    timing: task,
   }))
   const visible = tasks.filter(
     (task) =>
       filter === 'all' ||
-      (filter === 'processing' && task.action.includes('MÁY')) ||
-      (filter === 'ready' && task.action.includes('LẤY ĐỒ')) ||
+      (filter === 'processing' && task.timing?.phase === 'RUNNING') ||
+      (filter === 'ready' &&
+        (task.timing?.phase === 'WAITING_UNLOAD' || task.actionType === 'NOTIFY')) ||
       (filter === 'pending' &&
-        (task.action.includes('PHÂN LOẠI') || task.action.includes('XẾP ĐỒ'))),
+        (task.actionType === 'CLASSIFY' ||
+          task.actionType === 'START' ||
+          task.actionType === 'PACK')),
   )
   const complete = async (task: Task, notificationContent?: string) => {
     try {
@@ -102,15 +99,25 @@ export function QueuePage({
         const action = task.stageStatus === 'MACHINE_FINISHED' ? 'unload' : 'machine-finished'
         await updateStage(task, action)
       } else if (task.orderId) {
-        if (task.action === 'PHÂN LOẠI') await confirmClassification(task.orderId)
-        else if (task.action === 'XẾP ĐỒ') await completePacking(task.orderId)
-        else await sendReadyNotification(task.orderId, notificationContent ?? '')
+        await sendReadyNotification(task.orderId, notificationContent ?? '')
       }
       await load()
-      onToast()
+      onChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không thể cập nhật tác vụ')
     }
+  }
+  // Dropping the bag from a finished machine onto its row unloads it right away,
+  // just like dropping a bag onto a machine starts it.
+  const unloadByDrop = (task: Task) => {
+    setDragging(null)
+    setTarget(null)
+    void updateStage(task, 'unload')
+      .then(load)
+      .then(onChanged)
+      .catch((cause) =>
+        setError(cause instanceof Error ? cause.message : 'Không thể lấy đồ ra khỏi máy'),
+      )
   }
   const requestComplete = (task: Task) => {
     if (task.action === 'CHỜ GỬI TIN KHÁCH') setNotifying(task)
@@ -164,9 +171,9 @@ export function QueuePage({
               Trạng thái
               <select value={filter} onChange={(event) => setFilter(event.target.value)}>
                 <option value="all">Tất cả trạng thái</option>
-                <option value="processing">Đang xử lý</option>
-                <option value="ready">Sẵn sàng lấy</option>
-                <option value="pending">Chờ xử lý</option>
+                <option value="processing">Đang chạy máy</option>
+                <option value="ready">Chờ dỡ đồ / gửi tin</option>
+                <option value="pending">Chờ làm (phân loại, vào máy, đóng gói)</option>
               </select>
             </label>
             <button className="primary small queue-create-button" onClick={onCreate}>
@@ -194,26 +201,13 @@ export function QueuePage({
               }}
               canAcceptUnload={Boolean(
                 dragging?.stageStatus === 'MACHINE_FINISHED' &&
-                  dragging.orderId === task.orderId &&
-                  dragging.batchStageId === task.batchStageId,
+                dragging.orderId === task.orderId &&
+                dragging.batchStageId === task.batchStageId,
               )}
+              unloadDropTarget={target === `row-${task.batchStageId}`}
+              onUnloadDragOver={() => setTarget(`row-${task.batchStageId}`)}
               onUnloadDrop={() => {
-                if (!dragging) return
-                const unloadTask = dragging
-                setDragging(null)
-                setTarget(null)
-                requestComplete(unloadTask)
-              }}
-              onReschedule={async () => {
-                if (task.batchId && task.batchStageId && task.stageStatus === 'PLANNED') {
-                  try {
-                    await updateStage(task, 'start', task.machineId ?? undefined)
-                    await load()
-                    onToast()
-                  } catch (cause) {
-                    setError(cause instanceof Error ? cause.message : 'Không thể bắt đầu máy')
-                  }
-                } else onScenario('reschedule')
+                if (dragging) unloadByDrop(dragging)
               }}
             />
           ))}
@@ -276,7 +270,7 @@ export function QueuePage({
             const machine = queue?.machines.find((item) => item.name === target)
             void updateStage(dragging, 'start', machine?.machine_id)
               .then(load)
-              .then(onToast)
+              .then(onChanged)
               .catch((cause) =>
                 setError(cause instanceof Error ? cause.message : 'Không thể đưa đồ vào máy'),
               )

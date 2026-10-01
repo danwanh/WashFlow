@@ -20,8 +20,9 @@ export type PlannedBatch = {
   group: string
   items: { itemIndex: number; weightKg: number }[]
   stages: {
-    stage: 'WASH' | 'DRY'
-    machineId: number
+    stage: 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
+    // null for the manual CLASSIFY (sorting) and PACKING stages
+    machineId: number | null
     plannedStartAt: string
     plannedEndAt: string
   }[]
@@ -88,6 +89,8 @@ const ETA_TOLERANCE = 5 * 60_000
 const MAX_ITERATIONS = 3
 const TOP_K = 10
 const iso = (date: Date) => date.toISOString()
+const CLASSIFY_MINUTES = Number(process.env.CLASSIFY_OFFSET_MINUTES ?? 10)
+const PACKING_MINUTES = Number(process.env.PACKING_OFFSET_MINUTES ?? 15)
 const requiredStages = (service: Service): Stage[] =>
   service === 'WASH' ? ['WASH'] : service === 'DRY' ? ['DRY'] : ['WASH', 'DRY']
 const typeFor = (stage: Stage) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
@@ -217,8 +220,16 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
   const planned: PlannedBatch[] = []
   let unusedCapacity = 0
   for (const [batchIndex, batch] of ordered.entries()) {
-    const stages: PlannedBatch['stages'] = []
-    let ready = input.now.getTime()
+    // Every batch is sorted first, then runs its machine stages, then is packed.
+    let ready = input.now.getTime() + CLASSIFY_MINUTES * 60_000
+    const stages: PlannedBatch['stages'] = [
+      {
+        stage: 'CLASSIFY',
+        machineId: null,
+        plannedStartAt: iso(input.now),
+        plannedEndAt: iso(new Date(ready)),
+      },
+    ]
     for (const stage of requiredStages(input.service)) {
       const candidates = availableMachines(input, stage).filter(
         (machine) => machine.capacityKg >= batch.weightKg,
@@ -244,6 +255,12 @@ function schedule(batches: BatchDraft[], input: PlanInput): Evaluation | null {
       })
       ready = end
     }
+    stages.push({
+      stage: 'PACKING',
+      machineId: null,
+      plannedStartAt: iso(new Date(ready)),
+      plannedEndAt: iso(new Date(ready + PACKING_MINUTES * 60_000)),
+    })
     planned.push({
       batchNo: batchIndex + 1,
       weightKg: batch.weightKg,

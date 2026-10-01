@@ -1,81 +1,64 @@
 import { useState } from 'react'
 import { BrowserRouter } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
-import { CreateOrderModal, DetailModal, ScenarioModal } from './components/modals/ModalComponents'
-import { initialTasks } from './data/mockTasks'
-import { AppRoutes } from './app/routes'
 import {
-  completePacking,
-  confirmClassification,
-  sendReadyNotification,
-  updateStage,
-  type CreatedOrder,
-} from './api'
+  CreateOrderModal,
+  DetailModal,
+  type DetailAction,
+} from './components/modals/ModalComponents'
+import { AppRoutes } from './app/routes'
+import { sendReadyNotification, updateStage } from './api'
+import { useStatusFeed } from './hooks/useStatusFeed'
 import type { Task } from './types/task'
 import type { Alert } from './api'
 
-type Modal = 'create' | 'detail' | 'reschedule' | 'delay' | 'notify' | null
+type Modal = 'create' | 'detail' | null
 
 function App() {
   const [selected, setSelected] = useState<Task | null>(null)
   const [modal, setModal] = useState<Modal>(null)
-  const [toast, setToast] = useState(false)
   const [queueRefresh, setQueueRefresh] = useState(0)
-  const showToast = () => {
-    setToast(true)
-    window.setTimeout(() => setToast(false), 3500)
+  const feed = useStatusFeed()
+  // After any change: reload the queue page and report what actually changed.
+  const afterChange = () => {
+    setQueueRefresh((value) => value + 1)
+    void feed.refresh()
   }
   const openDetail = (task: Task) => {
     setSelected(task)
     setModal('detail')
   }
-  const addOrder = (order: CreatedOrder) => {
-    setQueueRefresh((value) => value + 1)
+  // Errors propagate so the detail modal can show them and stay open.
+  const processDetailAction = async (action: DetailAction) => {
+    if (action.kind === 'stage')
+      await updateStage(
+        action,
+        action.endpoint,
+        action.endpoint === 'start' ? action.machineId : undefined,
+      )
+    else
+      await sendReadyNotification(
+        action.orderId,
+        'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
+      )
     setModal(null)
-    showToast()
-  }
-  const confirmScenario = () => {
-    setModal(null)
-    showToast()
-  }
-  const processDetailAction = async () => {
-    if (!selected) return
-    try {
-      if (selected.batchId && selected.batchStageId) {
-        const action =
-          selected.stageStatus === 'PLANNED'
-            ? 'start'
-            : selected.stageStatus === 'IN_PROGRESS'
-              ? 'machine-finished'
-              : 'unload'
-        await updateStage(selected, action, selected.machineId ?? undefined)
-      } else if (selected.orderId) {
-        if (selected.action === 'PHÂN LOẠI') await confirmClassification(selected.orderId)
-        else if (selected.action === 'XẾP ĐỒ') await completePacking(selected.orderId)
-        else
-          await sendReadyNotification(
-            selected.orderId,
-            'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
-          )
-      }
-      setModal(null)
-      setQueueRefresh((value) => value + 1)
-      showToast()
-    } catch {
-      setModal(null)
-      showToast()
-    }
+    afterChange()
   }
   const handleAlertAction = (alert: Alert) => {
     openDetail({
       id: String(alert.order_id),
       rank: 0,
-      action: alert.type === 'FORGOTTEN_PACKING' ? 'XẾP ĐỒ' : alert.type === 'FORGOTTEN_NOTIFICATION' ? 'CHỜ GỬI TIN KHÁCH' : 'LẤY ĐỒ RA',
+      action:
+        alert.type === 'FORGOTTEN_PACKING'
+          ? 'XẾP ĐỒ'
+          : alert.type === 'FORGOTTEN_NOTIFICATION'
+            ? 'CHỜ GỬI TIN KHÁCH'
+            : 'LẤY ĐỒ RA',
       customer: `Đơn #${alert.order_id}`,
       group: alert.batch_id ? `Mẻ #${alert.batch_id}` : 'Cảnh báo vận hành',
       detail: alert.reason,
       due: '',
-      tone: alert.severity === 'CRITICAL' ? 'amber' : 'amber',
+      tone: 'amber',
       orderId: alert.order_id,
       batchId: alert.batch_id ?? undefined,
     })
@@ -83,18 +66,17 @@ function App() {
   return (
     <BrowserRouter>
       <AppShell
-        toast={toast}
+        notices={feed.notices}
+        taskCount={feed.taskCount}
         onCreate={() => setModal('create')}
-        onOrder={() => openDetail(initialTasks[0])}
-        onScenario={(type) => setModal(type)}
-        onCloseToast={() => setToast(false)}
+        onDismissNotice={feed.dismiss}
+        onDismissAllNotices={feed.clearAll}
         onAlertAction={handleAlertAction}
       >
         <AppRoutes
           onCreate={() => setModal('create')}
           onDetail={openDetail}
-          onScenario={(type) => setModal(type)}
-          onToast={showToast}
+          onChanged={afterChange}
           refreshToken={queueRefresh}
         />
       </AppShell>
@@ -102,18 +84,30 @@ function App() {
         <DetailModal
           task={selected}
           onClose={() => setModal(null)}
-          onAction={() => void processDetailAction()}
-          onPickupChanged={() => {
-            setQueueRefresh((value) => value + 1)
-            showToast()
+          onAction={processDetailAction}
+          onPickupChanged={(orderId, pickupAt) => {
+            feed.push({
+              tone: 'info',
+              title: `Đơn #${orderId}: đã đổi giờ hẹn`,
+              detail: `Giờ hẹn mới ${new Date(pickupAt).toLocaleString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                day: '2-digit',
+                month: '2-digit',
+              })}`,
+            })
+            afterChange()
           }}
         />
       )}
       {modal === 'create' && (
-        <CreateOrderModal onClose={() => setModal(null)} onCreate={addOrder} />
-      )}
-      {(modal === 'reschedule' || modal === 'delay' || modal === 'notify') && (
-        <ScenarioModal type={modal} onClose={() => setModal(null)} onConfirm={confirmScenario} />
+        <CreateOrderModal
+          onClose={() => setModal(null)}
+          onCreate={() => {
+            setModal(null)
+            afterChange()
+          }}
+        />
       )}
     </BrowserRouter>
   )

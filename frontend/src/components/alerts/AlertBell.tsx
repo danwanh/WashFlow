@@ -54,22 +54,35 @@ function AlertBellItem({ alert, onChange }: { alert: Alert; onChange: () => void
   )
 }
 
-export function AlertBell({ onAction }: { onAction?: (alert: Alert) => void }) {
+export function AlertBell({
+  onAction,
+  dismissSignal = 0,
+}: {
+  onAction?: (alert: Alert) => void
+  // Bumped by the developer "close all" button: drops the current popup and every
+  // pending one locally (alert data is not changed).
+  dismissSignal?: number
+}) {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [open, setOpen] = useState(false)
   const [popupAlert, setPopupAlert] = useState<Alert | null>(null)
   const shownAlerts = useState(() => new Set<number>())[0]
+  useEffect(() => {
+    if (!dismissSignal) return
+    for (const alert of alerts) shownAlerts.add(alert.alert_id)
+    setPopupAlert(null)
+  }, [dismissSignal])
 
   const refresh = async () => {
     try {
       await scanAlerts()
-       const next = await getAlerts()
-       setAlerts(next)
-       const candidate = next.find((alert) => !shownAlerts.has(alert.alert_id))
-       if (candidate) {
-         shownAlerts.add(candidate.alert_id)
-         setPopupAlert(candidate)
-       }
+      const next = await getAlerts()
+      setAlerts(next)
+      const candidate = next.find((alert) => !shownAlerts.has(alert.alert_id))
+      if (candidate) {
+        shownAlerts.add(candidate.alert_id)
+        setPopupAlert(candidate)
+      }
     } catch {
       // The queue remains usable when alert polling is temporarily unavailable.
     }
@@ -92,14 +105,30 @@ export function AlertBell({ onAction }: { onAction?: (alert: Alert) => void }) {
     <div className="alert-center">
       {popupAlert && (
         <div className="alert-modal-backdrop" role="presentation">
-          <section className={`alert-modal ${popupAlert.severity.toLowerCase()}`} role="alertdialog" aria-modal="true" aria-labelledby="alert-modal-title">
-            <div className="alert-modal-icon"><Bell size={23} /></div>
+          <section
+            className={`alert-modal ${popupAlert.severity.toLowerCase()}`}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="alert-modal-title"
+          >
+            <div className="alert-modal-icon">
+              <Bell size={23} />
+            </div>
             <small>CẢNH BÁO VẬN HÀNH</small>
             <h2 id="alert-modal-title">{labels[popupAlert.type] ?? 'Cảnh báo'}</h2>
-            <p>Đơn #{popupAlert.order_id}{popupAlert.batch_id ? ` · Mẻ ${popupAlert.batch_id}` : ''}</p>
+            <p>
+              Đơn #{popupAlert.order_id}
+              {popupAlert.batch_id ? ` · Mẻ ${popupAlert.batch_id}` : ''}
+            </p>
             <strong>{popupAlert.reason}</strong>
             <div className="alert-modal-actions">
-              <button className="secondary" onClick={() => { onAction?.(popupAlert); setPopupAlert(null) }}>
+              <button
+                className="secondary"
+                onClick={() => {
+                  onAction?.(popupAlert)
+                  setPopupAlert(null)
+                }}
+              >
                 {actionLabels[popupAlert.type] ?? 'Xử lý đơn hàng'}
               </button>
               <button className="primary" onClick={() => void snooze()}>

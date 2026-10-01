@@ -1,3 +1,5 @@
+import type { StageName, StageTiming } from '../api'
+
 export type Task = {
   id: string
   rank: number
@@ -25,4 +27,7 @@ export type Task = {
   plannedEndAt?: string | null
   actualStartedAt?: string | null
   actualMachineFinishedAt?: string | null
+  stage?: StageName
+  orderLateMinutes?: number
+  timing?: StageTiming
 }

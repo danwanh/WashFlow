@@ -65,7 +65,11 @@ async function seedOrders(
         phone: `09100000${String(status.length * 10 + index).padStart(2, '0')}`,
       },
     })
-    const createdAt = new Date(now.getTime() - (index + 1) * 60 * 60 * 1000)
+    // Finished orders started long enough ago that every actual time is in the past.
+    const createdAt = new Date(
+      now.getTime() -
+        (index + (status === 'RECEIVED' || status === 'WAITING' ? 1 : 4)) * 60 * 60 * 1000,
+    )
     const isCompleted = status === 'COMPLETED'
     const isReady = status === 'READY'
     const isPacking = status === 'FOLDING_PACKING'
@@ -96,6 +100,7 @@ async function seedOrders(
           : new Date(now.getTime() + 90 * 60 * 1000),
         priority: index % 2,
         specialNote: `SEED_STATUS_${status}_${index + 1}`,
+        createdAt,
         ...(status !== 'RECEIVED' ? { classifiedAt: new Date(createdAt.getTime() + 10 * 60 * 1000) } : {}),
         ...(isPacking || isReady || isCompleted
           ? { packingCompletedAt: new Date(now.getTime() - 20 * 60 * 1000) }
@@ -390,6 +395,62 @@ async function main() {
   await seedOrders('FOLDING_PACKING', 3, now, washerIds, dryerIds)
   await seedOrders('READY', 3, now, washerIds, dryerIds)
   await seedOrders('COMPLETED', 3, now, washerIds, dryerIds)
+  await addManualStages()
+}
+
+// Every batch runs sorting (CLASSIFY) before and PACKING after its machine stages.
+// The orders above only create WASH/DRY, so add the manual stages to match each order's status.
+async function addManualStages() {
+  const MINUTE = 60 * 1000
+  const orders = await prisma.laundryOrder.findMany({
+    include: { batches: { include: { stages: true } } },
+  })
+  for (const order of orders) {
+    const sorted = order.status !== 'RECEIVED'
+    const packed = order.status === 'READY' || order.status === 'COMPLETED'
+    for (const batch of order.batches) {
+      if (batch.stages.some((stage) => stage.stage === 'CLASSIFY')) continue
+      const machineStages = [...batch.stages].sort(
+        (a, b) => (a.plannedStartAt?.getTime() ?? 0) - (b.plannedStartAt?.getTime() ?? 0),
+      )
+      const classifyStart = order.createdAt
+      const classifyEnd = new Date(classifyStart.getTime() + 10 * MINUTE)
+      const lastMachineEnd =
+        machineStages.at(-1)?.actualEndedAt ?? machineStages.at(-1)?.plannedEndAt ?? classifyEnd
+      const packingEnd = new Date(lastMachineEnd.getTime() + 15 * MINUTE)
+      await prisma.batchStage.createMany({
+        data: [
+          {
+            batchId: batch.batchId,
+            stage: 'CLASSIFY',
+            status: sorted ? 'COMPLETED' : 'PLANNED',
+            plannedStartAt: classifyStart,
+            plannedEndAt: classifyEnd,
+            actualStartedAt: classifyStart,
+            actualEndedAt: sorted ? (order.classifiedAt ?? classifyEnd) : null,
+          },
+          {
+            batchId: batch.batchId,
+            stage: 'PACKING',
+            status: packed ? 'COMPLETED' : 'PLANNED',
+            plannedStartAt: lastMachineEnd,
+            plannedEndAt: packingEnd,
+            actualEndedAt: packed ? (order.packingCompletedAt ?? packingEnd) : null,
+          },
+        ],
+      })
+      // A batch is COMPLETED only after packing; before that it waits on its next stage.
+      const nextStage = !sorted
+        ? 'CLASSIFY'
+        : machineStages.find((stage) => stage.status !== 'COMPLETED')?.stage ??
+          (packed ? null : 'PACKING')
+      if (nextStage === 'CLASSIFY' || nextStage === 'PACKING')
+        await prisma.orderBatch.update({
+          where: { batchId: batch.batchId },
+          data: { status: 'WAITING', currentStage: nextStage, completedAt: null },
+        })
+    }
+  }
 }
 
 main()
