@@ -31,7 +31,7 @@ npx tsx --test --test-name-pattern "WASH_DRY" src/services/planner.test.ts
 
 Requires `DATABASE_URL` in `backend/.env` (read by `prisma7.config.ts` and `services/api.ts`). Optional env: `PORT`, `PLAN_SECRET`, `CLASSIFY_OFFSET_MINUTES` (default 10), `PACKING_OFFSET_MINUTES` (15), `STAGE_APPROACHING_THRESHOLD_MINUTES` (5), `ALERT_WAITING_THRESHOLD_MINUTES` (30), `ALERT_UNLOAD_THRESHOLD_MINUTES` (15), `ALERT_PACKING_THRESHOLD_MINUTES` (30), `ALERT_READY_THRESHOLD_MINUTES` (30).
 
-`prisma7.config.ts` points at `prisma/migrations/`, but no migrations are committed; the local database was created without them. Do not run `prisma migrate dev` against an existing database without a baseline — it will detect drift and offer to reset it. For a throwaway database, `npx prisma db push` creates the schema.
+Migrations live in `prisma/migrations/`; `0_init` is a baseline of the schema as it was when migrations were introduced. An existing database created without migrations must be baselined first (`npx prisma migrate resolve --applied 0_init`) before `prisma migrate dev`, otherwise Prisma detects drift and offers to reset it.
 
 Backend formatting (no config file): `npx prettier --write --single-quote --no-semi --trailing-comma all "src/**/*.ts"`; `npx prisma format` for the schema.
 
