@@ -237,7 +237,7 @@ export type PickupPreviewResponse = {
     estimated_at: string
     late: boolean
     preexisting_late?: boolean
-    relation?: 'changing' | 'same_group' | 'affected'
+    relation?: 'changing' | 'rescheduled' | 'affected'
   }>
   unscheduled_stage_ids: number[]
   earliest_feasible_pickup: string | null

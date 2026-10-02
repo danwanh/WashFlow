@@ -2367,7 +2367,7 @@ button.done {
   font-style: normal;
   font-weight: 800;
 }
-.pickup-affected-order.same_group .pickup-affected-order-heading em {
+.pickup-affected-order.rescheduled .pickup-affected-order-heading em {
   background: #e0f2fe;
   color: #0369a1;
 }

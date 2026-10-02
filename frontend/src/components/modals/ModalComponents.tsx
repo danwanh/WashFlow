@@ -346,7 +346,7 @@ export function DetailModal({
                               #{affected.order_id} · {affected.customer}
                             </span>
                             {affected.relation === 'changing' && <em>Đang đổi giờ</em>}
-                            {affected.relation === 'same_group' && <em>Cùng nhóm</em>}
+                            {affected.relation === 'rescheduled' && <em>Bị đổi lịch</em>}
                           </div>
                           <small className="pickup-affected-order-time">
                             Hẹn {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'}{' '}

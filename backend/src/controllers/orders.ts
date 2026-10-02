@@ -471,7 +471,7 @@ export async function pickupChange(req: Request, res: Response) {
       feasible: evaluation.feasible,
       affected_orders: described.map((entry) => ({
         ...entry,
-        relation: entry.order_id === orderId ? 'changing' : 'same_group',
+        relation: entry.order_id === orderId ? 'changing' : 'rescheduled',
         pickup_at:
           entry.order_id === orderId
             ? newPickupAt.toISOString()

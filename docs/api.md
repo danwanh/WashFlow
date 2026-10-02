@@ -278,7 +278,7 @@ whole-minute pickup that meets both rules, or `null`),
 
 With `"preview": true` nothing is saved. The server returns `200` with
 `feasible`, `affected_orders[]` (`order_id`, `relation`: `changing` |
-`same_group`, `customer`, `pickup_at`, `estimated_at`, `late`,
+`rescheduled` (another on-time order whose planned stages move), `customer`, `pickup_at`, `estimated_at`, `late`,
 `preexisting_late`), `unscheduled_stage_ids`, and `earliest_feasible_pickup`.
 The order being changed is always listed, even when it is already late.
 A new pickup equal to the current one is rejected with `400`.

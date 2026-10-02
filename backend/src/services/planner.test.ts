@@ -181,3 +181,48 @@ test('never puts groups that only share a towel batch together', () => {
     assert.ok(!(indices.includes(1) && indices.includes(2)))
   }
 })
+
+test('merges two groups exactly when the spec merge matrix says Y', () => {
+  // spec.md §4.2, one item type per group in the column order of the table.
+  const types = [
+    'white',
+    'light',
+    'dark',
+    'black',
+    'towel',
+    'jeans',
+    'sport',
+    'delicate',
+    'special',
+  ]
+  const matrix = [
+    'YYNNYNNNN',
+    'YYNNYNNNN',
+    'NNYYYYNNN',
+    'NNYYYYNNN',
+    'YYYYYYNNN',
+    'NNYYYYNNN',
+    'NNNNNNYNN',
+    'NNNNNNNYN',
+    'NNNNNNNNY',
+  ]
+  for (const [row, a] of types.entries())
+    for (const [column, b] of types.entries()) {
+      const result = buildPlan({
+        service: 'WASH',
+        now,
+        pickupAt: new Date('2026-01-01T12:00:00.000Z'),
+        machines,
+        items: [
+          { index: 0, itemType: a, quantity: 1, weightKg: 1 },
+          { index: 1, itemType: b, quantity: 1, weightKg: 1 },
+        ],
+      })
+      assert.equal(result.feasible, true)
+      assert.equal(
+        result.batches.length === 1,
+        matrix[row]![column] === 'Y',
+        `${a} + ${b} should ${matrix[row]![column] === 'Y' ? '' : 'not '}merge`,
+      )
+    }
+})

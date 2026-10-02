@@ -202,74 +202,31 @@ SPECIAL
 Legend:
 
 ```text
-Y = may merge when wash/dry requirements also match
+Y = may merge
 N = do not merge
-C = conditional; merge only when configured processing requirements match
 ```
 
 | Group | WHITE_NORMAL | LIGHT_NORMAL | DARK_NORMAL | BLACK_NORMAL | TOWEL_HEAVY | JEANS_HEAVY | SPORT | DELICATE | SPECIAL |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **WHITE_NORMAL** | Y | C | N | N | C | N | N | N | N |
-| **LIGHT_NORMAL** | C | Y | N | N | C | N | N | N | N |
-| **DARK_NORMAL** | N | N | Y | C | C | C | N | N | N |
-| **BLACK_NORMAL** | N | N | C | Y | C | C | N | N | N |
-| **TOWEL_HEAVY** | C | C | C | C | Y | C | N | N | N |
-| **JEANS_HEAVY** | N | N | C | C | C | Y | N | N | N |
+| **WHITE_NORMAL** | Y | Y | N | N | Y | N | N | N | N |
+| **LIGHT_NORMAL** | Y | Y | N | N | Y | N | N | N | N |
+| **DARK_NORMAL** | N | N | Y | Y | Y | Y | N | N | N |
+| **BLACK_NORMAL** | N | N | Y | Y | Y | Y | N | N | N |
+| **TOWEL_HEAVY** | Y | Y | Y | Y | Y | Y | N | N | N |
+| **JEANS_HEAVY** | N | N | Y | Y | Y | Y | N | N | N |
 | **SPORT** | N | N | N | N | N | N | Y | N | N |
 | **DELICATE** | N | N | N | N | N | N | N | Y | N |
-| **SPECIAL** | N | N | N | N | N | N | N | N | C |
+| **SPECIAL** | N | N | N | N | N | N | N | N | Y |
 
 This matrix is a configurable business-rule baseline, not a universal textile-care rule.
 
-Current implementation (`backend/src/services/planner.ts`): `C` is treated as `Y` because no per-item wash/dry/fabric/soil requirements are captured yet. `item_type` maps to a group through a fixed table, and unknown types become `SPECIAL`.
+Implementation (`backend/src/services/planner.ts`): `item_type` maps to a group through a fixed table, and unknown types become `SPECIAL`. The matrix is symmetric but not transitive (towels merge with white and dark, which do not merge with each other), so an item joins a batch only if it may merge with every item already in it.
 
-### 4.3 Conditional merge rule
-
-For a matrix value `C`, merge only if all configured requirements match:
+### 4.3 Merge rule
 
 ```text
-wash_mode compatible
-AND color-transfer rule allows merge
-AND fabric/handling requirements compatible
-AND soil requirements compatible
-AND special handling compatible
-AND, for DRY/WASH_DRY, dry_mode compatible
-```
-
-Precedence:
-
-```text
-care/special restriction
-> fabric/handling rule
-> soil rule
-> color rule
-```
-
-```text
-FUNCTION canMerge(a, b, service):
-
-    relation = MERGE_MATRIX[a.group][b.group]
-
-    IF relation == N:
-        RETURN false
-
-    IF special/care restriction conflicts:
-        RETURN false
-
-    IF wash requirements conflict:
-        RETURN false
-
-    IF fabric/handling conflicts:
-        RETURN false
-
-    IF soil requirements conflict:
-        RETURN false
-
-    IF service includes DRY
-       AND dry requirements conflict:
-        RETURN false
-
-    RETURN true
+FUNCTION canMerge(a, b):
+    RETURN MERGE_MATRIX[a.group][b.group] == Y
 ```
 
 Never infer a merge from weight alone.
@@ -308,7 +265,7 @@ Do not persist the final schedule until staff confirms a feasible plan.
 ## P2 — Build Compatibility Groups
 
 1. Read all `ORDER_ITEMS`.
-2. Apply the merge matrix + conditional rules.
+2. Apply the merge matrix.
 3. Build groups containing only mutually compatible laundry.
 4. Never merge incompatible groups.
 
