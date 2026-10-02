@@ -18,11 +18,11 @@ export type QueueSnapshot = {
 
 // What staff see when an order moves to a new status.
 const orderStatusNotices: Record<string, string> = {
-  RECEIVED: 'vừa được tiếp nhận',
-  WAITING: 'đã phân loại xong, đang giặt sấy',
-  FOLDING_PACKING: 'đã giặt sấy xong, chờ xếp đồ',
-  READY: 'đã xong, nhớ báo khách đến lấy',
-  COMPLETED: 'đã báo khách, hoàn tất',
+  RECEIVED: 'was just received',
+  WAITING: 'is sorted, now washing/drying',
+  FOLDING_PACKING: 'is washed and dried, waiting to be packed',
+  READY: 'is done, remember to notify the customer',
+  COMPLETED: 'customer notified, completed',
 }
 
 export function snapshotQueue(queue: QueueResponse): QueueSnapshot {
@@ -47,15 +47,15 @@ export function snapshotQueue(queue: QueueResponse): QueueSnapshot {
 // What a batch finished when its current stage moved on (or the batch left the queue).
 const stageDone = (before: BatchState) => {
   const where = describe(before)
-  if (before.stage === 'CLASSIFY') return { title: 'Phân loại xong', detail: where }
-  if (before.stage === 'PACKING') return { title: 'Đóng gói xong', detail: where }
-  return { title: `Đã lấy đồ ra khỏi ${machineName(before)}`, detail: where }
+  if (before.stage === 'CLASSIFY') return { title: 'Sorting done', detail: where }
+  if (before.stage === 'PACKING') return { title: 'Packing done', detail: where }
+  return { title: `Unloaded ${machineName(before)}`, detail: where }
 }
 
 const describe = (batch: BatchState) =>
-  `Đơn #${batch.order_id} · ${batch.group} · ${batch.customer}`
+  `Order #${batch.order_id} · ${batch.group} · ${batch.customer}`
 const machineName = (batch: BatchState) =>
-  batch.machine_name ?? (batch.stage === 'DRY' ? 'máy sấy' : 'máy giặt')
+  batch.machine_name ?? (batch.stage === 'DRY' ? 'dryer' : 'washer')
 
 // Notices for the real status changes between two polls of the queue.
 export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Notice, 'id'>[] {
@@ -72,13 +72,13 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
     if (next.stage_status === 'IN_PROGRESS')
       notices.push({
         tone: 'info',
-        title: `Đã cho đồ vào ${machineName(next)}`,
+        title: `Loaded ${machineName(next)}`,
         detail: where,
       })
     if (next.stage_status === 'MACHINE_FINISHED')
       notices.push({
         tone: 'warning',
-        title: `${machineName(next)} đã chạy xong, mời lấy đồ ra`,
+        title: `${machineName(next)} finished, please unload`,
         detail: where,
       })
   }
@@ -86,11 +86,11 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
   for (const [orderId, next] of after.orders) {
     const prev = before.orders.get(orderId)
     if (!prev) {
-      notices.push({ tone: 'info', title: `Có đơn mới #${orderId}`, detail: next.customer })
+      notices.push({ tone: 'info', title: `New order #${orderId}`, detail: next.customer })
     } else if (prev.status !== next.status) {
       notices.push({
         tone: next.status === 'READY' ? 'success' : 'info',
-        title: `Đơn #${orderId} ${orderStatusNotices[next.status] ?? 'vừa được cập nhật'}`,
+        title: `Order #${orderId} ${orderStatusNotices[next.status] ?? 'was updated'}`,
         detail: next.customer,
       })
     }
@@ -99,7 +99,7 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
     if (!after.orders.has(orderId))
       notices.push({
         tone: 'success',
-        title: `Đơn #${orderId} đã báo khách, hoàn tất`,
+        title: `Order #${orderId}: customer notified, completed`,
         detail: prev.customer,
       })
 

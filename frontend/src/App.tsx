@@ -39,7 +39,7 @@ function App() {
     else
       await sendReadyNotification(
         action.orderId,
-        'Đơn hàng của bạn đã hoàn tất và sẵn sàng giao trả.',
+        'Your order is complete and ready for pickup.',
       )
     setModal(null)
     afterChange()
@@ -50,12 +50,12 @@ function App() {
       rank: 0,
       action:
         alert.type === 'FORGOTTEN_PACKING'
-          ? 'XẾP ĐỒ'
+          ? 'PACK'
           : alert.type === 'FORGOTTEN_NOTIFICATION'
-            ? 'CHỜ GỬI TIN KHÁCH'
-            : 'LẤY ĐỒ RA',
-      customer: `Đơn #${alert.order_id}`,
-      group: alert.batch_id ? `Mẻ #${alert.batch_id}` : 'Cảnh báo vận hành',
+            ? 'NOTIFY CUSTOMER'
+            : 'UNLOAD',
+      customer: `Order #${alert.order_id}`,
+      group: alert.batch_id ? `Batch #${alert.batch_id}` : 'Operations alert',
       detail: alert.reason,
       due: '',
       tone: 'amber',
@@ -87,8 +87,8 @@ function App() {
           onPickupChanged={(orderId, pickupAt) => {
             feed.push({
               tone: 'info',
-              title: `Đơn #${orderId}: đã đổi giờ hẹn`,
-              detail: `Giờ hẹn mới ${new Date(pickupAt).toLocaleString('vi-VN', {
+              title: `Order #${orderId}: pickup time changed`,
+              detail: `New pickup time ${new Date(pickupAt).toLocaleString('en-GB', {
                 hour: '2-digit',
                 minute: '2-digit',
                 day: '2-digit',

@@ -7,15 +7,15 @@ const ms = (value: string | null | undefined) => (value ? new Date(value).getTim
 
 export const formatMinutes = (minutes: number) => {
   const value = Math.max(0, minutes)
-  if (value < 60) return `${value} phút`
+  if (value < 60) return `${value} min`
   const hours = Math.floor(value / 60)
   const rest = value % 60
-  return rest ? `${hours} giờ ${rest} phút` : `${hours} giờ`
+  return rest ? `${hours} h ${rest} min` : `${hours} h`
 }
 
 export const formatClock = (value: string | null | undefined) =>
   value
-    ? new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : '--:--'
 
 // Re-derives the backend timing (backend/src/services/timing.ts) against the client
@@ -31,7 +31,7 @@ export function liveTiming(
       status: timing.timing_status,
       label:
         timing.delay_minutes > 0
-          ? `Xong trễ ${formatMinutes(timing.delay_minutes)}`
+          ? `Finished ${formatMinutes(timing.delay_minutes)} late`
           : timing.timing_label,
     }
   const lateAt = ms(timing.late_at)
@@ -48,25 +48,25 @@ export function liveTiming(
     target === null ? 0 : Math.max(0, Math.ceil((target - now) / MINUTE))
   const waited = since === null ? 0 : Math.max(0, Math.floor((now - since) / MINUTE))
 
-  if (timing.phase === 'WAITING_UNLOAD') return { status, label: `Chờ dỡ ${formatMinutes(waited)}` }
+  if (timing.phase === 'WAITING_UNLOAD') return { status, label: `Waiting to unload ${formatMinutes(waited)}` }
   if (timing.phase === 'RUNNING')
     return status === 'LATE'
-      ? { status, label: `Trễ công đoạn ${formatMinutes(overdue)}` }
-      : { status, label: `Còn ${formatMinutes(until(ms(timing.expected_end_at)))}` }
+      ? { status, label: `Stage late ${formatMinutes(overdue)}` }
+      : { status, label: `${formatMinutes(until(ms(timing.expected_end_at)))} left` }
   // PLANNED
-  if (!stage) return { status, label: `Chờ gửi tin ${formatMinutes(waited)}` }
-  if (lateAt === null) return { status: 'ON_TIME', label: 'Dự kiến' }
+  if (!stage) return { status, label: `Waiting to notify ${formatMinutes(waited)}` }
+  if (lateAt === null) return { status: 'ON_TIME', label: 'Planned' }
   if (stage === 'CLASSIFY' || stage === 'PACKING') {
-    if (status === 'LATE') return { status, label: `Trễ công đoạn ${formatMinutes(overdue)}` }
+    if (status === 'LATE') return { status, label: `Stage late ${formatMinutes(overdue)}` }
     return {
       status,
       label:
-        since !== null ? `Chờ ${formatMinutes(waited)}` : `Còn ${formatMinutes(until(lateAt))}`,
+        since !== null ? `Waiting ${formatMinutes(waited)}` : `${formatMinutes(until(lateAt))} left`,
     }
   }
   return status === 'LATE'
-    ? { status, label: `Trễ công đoạn ${formatMinutes(overdue)}` }
-    : { status, label: `Vào máy sau ${formatMinutes(until(lateAt))}` }
+    ? { status, label: `Stage late ${formatMinutes(overdue)}` }
+    : { status, label: `Load in ${formatMinutes(until(lateAt))}` }
 }
 
 export const statusClass = (status: LiveStatus | undefined) =>

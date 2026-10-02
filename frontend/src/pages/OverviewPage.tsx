@@ -4,7 +4,7 @@ import { getOverview, type OverviewResponse } from '../api'
 import { ChartCard, ChartTooltip, Kpi, ViewHeader } from '../components/overview/OverviewComponents'
 
 const today = () => new Date().toISOString().slice(0, 10)
-const formatMoney = (value: number) => value.toLocaleString('vi-VN') + 'đ'
+const formatMoney = (value: number) => value.toLocaleString('en-US') + ' VND'
 
 // Mark colors, kept here so tooltip keys match the bars they describe.
 const REVENUE_COLOR = '#7dd3fc'
@@ -24,7 +24,7 @@ export function OverviewPage() {
   const [error, setError] = useState('')
   const load = () => {
     setLoading(true)
-    void getOverview(from, to).then(setData).then(() => setError('')).catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tải tổng quan')).finally(() => setLoading(false))
+    void getOverview(from, to).then(setData).then(() => setError('')).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not load the overview')).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [from, to])
   const maxPeak = Math.max(1, ...(data?.pickupPeaks.map((item) => item.value) ?? []))
@@ -32,22 +32,22 @@ export function OverviewPage() {
   const maxRevenue = Math.max(1, ...(data?.revenueByHour.map((item) => item.value) ?? []))
   return (
     <section className="view-panel">
-      <ViewHeader title="Tổng quan vận hành" subtitle="" action="← Quay lại Hàng đợi" onAction={() => navigate('/queue')} />
+      <ViewHeader title="Operations overview" subtitle="" action="← Back to queue" onAction={() => navigate('/queue')} />
       <div className="date-filter">
-        <label>Từ ngày <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label>Đến ngày <input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        <label>From <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+        <label>To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
       </div>
-      {loading && <p className="data-state">Đang tải số liệu...</p>}
-      {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Thử lại</button></p>}
+      {loading && <p className="data-state">Loading data...</p>}
+      {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Retry</button></p>}
       {data && !error && <>
         <div className="kpi-grid">
-          <Kpi label="Doanh thu" value={data.kpis.revenue ? formatMoney(data.kpis.revenue) : 'Chưa có dữ liệu'} note="Database chưa có trường giá" tone="green" />
-          <Kpi label="Đơn hàng" value={`${data.kpis.orderCount} đơn`} note={`Đang xử lý: ${data.kpis.processingCount} đơn`} tone="blue" />
-          <Kpi label="Đúng hẹn" value={`${data.kpis.onTimeCount} đơn`} note={`${data.appointmentStatus.onTime} đơn đạt hạn`} tone="green" />
-          <Kpi label="Trễ hẹn" value={`${data.kpis.lateCount} đơn`} note="Tính theo ETA và giờ hẹn" tone="red" />
+          <Kpi label="Revenue" value={data.kpis.revenue ? formatMoney(data.kpis.revenue) : 'No data yet'} note="The database has no price field yet" tone="green" />
+          <Kpi label="Orders" value={`${data.kpis.orderCount} orders`} note={`In progress: ${data.kpis.processingCount} orders`} tone="blue" />
+          <Kpi label="On time" value={`${data.kpis.onTimeCount} orders`} note={`${data.appointmentStatus.onTime} orders met the deadline`} tone="green" />
+          <Kpi label="Late" value={`${data.kpis.lateCount} orders`} note="Based on ETA and pickup time" tone="red" />
         </div>
         <div className="chart-grid">
-          <ChartCard title="Doanh thu theo giờ">
+          <ChartCard title="Revenue by hour">
             <div className="bar-chart revenue-bars">
               {data.revenueByHour.length ? (
                 data.revenueByHour.map((item) => (
@@ -59,14 +59,14 @@ export function OverviewPage() {
                   </div>
                 ))
               ) : (
-                <div className="data-state">Chưa có doanh thu.</div>
+                <div className="data-state">No revenue yet.</div>
               )}
             </div>
           </ChartCard>
-          <ChartCard title="Tình trạng giờ hẹn">
+          <ChartCard title="Pickup punctuality">
             <AppointmentPie onTime={data.kpis.onTimeCount} late={data.kpis.lateCount} />
           </ChartCard>
-          <ChartCard title="Giờ cao điểm hẹn lấy đồ">
+          <ChartCard title="Peak pickup hours">
             <div className="horizontal-bars">
               {data.pickupPeaks.length ? (
                 data.pickupPeaks.map((item, index) => (
@@ -75,8 +75,8 @@ export function OverviewPage() {
                     <span>
                       <i style={{ width: `${(item.value / maxPeak) * 100}%` }}>
                         <ChartTooltip
-                          value={`${item.value} đơn`}
-                          label={`Hẹn lúc ${item.label}`}
+                          value={`${item.value} orders`}
+                          label={`Pickup at ${item.label}`}
                           color={index === data.pickupPeaks.length - 1 ? PEAK_LAST_COLOR : PEAK_COLOR}
                         />
                       </i>
@@ -84,18 +84,18 @@ export function OverviewPage() {
                   </div>
                 ))
               ) : (
-                <div className="data-state">Không có dữ liệu.</div>
+                <div className="data-state">No data.</div>
               )}
             </div>
           </ChartCard>
-          <ChartCard title="Số lượng đơn theo ngày">
+          <ChartCard title="Orders per day">
             <div className="bar-chart green-bars">
               {data.ordersByDay.length ? (
                 data.ordersByDay.map((item, index) => (
                   <div className="bar-column chart-interactive-bar orders-bar" key={item.label} tabIndex={0}>
                     <span className="chart-value-bar" style={{ height: `${(item.value / maxDay) * 100}%` }}>
                       <ChartTooltip
-                        value={`${item.value} đơn`}
+                        value={`${item.value} orders`}
                         label={item.label}
                         color={index === data.ordersByDay.length - 1 ? ORDERS_LAST_COLOR : ORDERS_COLOR}
                       />
@@ -104,7 +104,7 @@ export function OverviewPage() {
                   </div>
                 ))
               ) : (
-                <div className="data-state">Không có dữ liệu.</div>
+                <div className="data-state">No data.</div>
               )}
             </div>
           </ChartCard>
@@ -140,11 +140,11 @@ function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
   const [active, setActive] = useState<string | null>(null)
   const total = onTime + late
   const onTimePercent = total ? Math.round((onTime / total) * 100) : 0
-  if (!total) return <div className="data-state">Không có dữ liệu.</div>
+  if (!total) return <div className="data-state">No data.</div>
   let angle = 0
   const slices = [
-    { key: 'on-time', label: 'Đúng hẹn', value: onTime, color: ON_TIME_COLOR },
-    { key: 'late', label: 'Trễ hẹn', value: late, color: LATE_COLOR },
+    { key: 'on-time', label: 'On time', value: onTime, color: ON_TIME_COLOR },
+    { key: 'late', label: 'Late', value: late, color: LATE_COLOR },
   ]
     .filter((slice) => slice.value > 0)
     .map((slice) => {
@@ -157,7 +157,7 @@ function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
   const hovered = slices.find((slice) => slice.key === active)
   return (
     <div className="pie-wrap">
-      <div className="pie-chart" role="img" aria-label={`Đúng hẹn ${onTime} đơn, trễ hẹn ${late} đơn`}>
+      <div className="pie-chart" role="img" aria-label={`On time ${onTime} orders, late ${late} orders`}>
         <svg viewBox={`0 0 ${PIE_SIZE} ${PIE_SIZE}`}>
           {slices.map((slice) => (
             <path
@@ -166,7 +166,7 @@ function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
               d={slice.path}
               fill={slice.color}
               tabIndex={0}
-              aria-label={`${slice.label}: ${slice.value} đơn`}
+              aria-label={`${slice.label}: ${slice.value} orders`}
               onPointerEnter={() => setActive(slice.key)}
               onPointerLeave={() => setActive(null)}
               onFocus={() => setActive(slice.key)}
@@ -176,7 +176,7 @@ function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
         </svg>
         {hovered && (
           <ChartTooltip
-            value={`${hovered.value} đơn · ${Math.round((hovered.value / total) * 100)}%`}
+            value={`${hovered.value} orders · ${Math.round((hovered.value / total) * 100)}%`}
             label={hovered.label}
             color={hovered.color}
             style={{
@@ -191,12 +191,12 @@ function AppointmentPie({ onTime, late }: { onTime: number; late: number }) {
       </div>
       <div className="legend">
         <strong className="pie-headline">
-          {onTimePercent}% <small>đúng hẹn</small>
+          {onTimePercent}% <small>on time</small>
         </strong>
-        <b><i className="green-dot" /> Đúng hẹn</b>
-        <small>{onTime} đơn</small>
-        <b><i className="red-dot" /> Trễ hẹn</b>
-        <small>{late} đơn</small>
+        <b><i className="green-dot" /> On time</b>
+        <small>{onTime} orders</small>
+        <b><i className="red-dot" /> Late</b>
+        <small>{late} orders</small>
       </div>
     </div>
   )

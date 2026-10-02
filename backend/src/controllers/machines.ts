@@ -164,7 +164,7 @@ async function describeImpact(impact: ReturnType<typeof maintenanceImpact>) {
       order_id: ref.orderId,
       customer:
         orders.find((order) => order.orderId === ref.orderId)?.customer.name ??
-        'Không rõ khách hàng',
+        'Unknown customer',
       batch_id: ref.batchId,
       batch_stage_id: ref.stage.batchStageId,
       stage: ref.stage.stage,

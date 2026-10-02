@@ -13,12 +13,12 @@ const thresholds = () => ({
 });
 
 const stageLabels: Record<string, string> = {
-  CLASSIFY: "Phân loại",
-  WASH: "Giặt",
-  DRY: "Sấy",
-  PACKING: "Đóng gói",
+  CLASSIFY: "Sorting",
+  WASH: "Washing",
+  DRY: "Drying",
+  PACKING: "Packing",
 };
-const stageLabel = (stage: string) => stageLabels[stage] ?? "Công đoạn";
+const stageLabel = (stage: string) => stageLabels[stage] ?? "Stage";
 
 const activeStatuses = { status: { not: "RESOLVED" as const } };
 
@@ -102,7 +102,7 @@ export async function recordMachineFinishedAlert(
     batchId,
     type: "MACHINE_FINISHED",
     severity: "INFO",
-    reason: "Máy đã chạy xong, cần lấy đồ ra",
+    reason: "Machine finished, needs unloading",
     active: true,
     now,
   });
@@ -118,7 +118,7 @@ export async function resolveMachineFinishedAlert(
     batchId,
     type: "MACHINE_FINISHED",
     severity: "INFO",
-    reason: "Đã lấy đồ ra khỏi máy",
+    reason: "Unloaded from the machine",
     active: false,
     now,
   });
@@ -145,8 +145,8 @@ export async function scanAlerts(now = new Date()) {
         type: "LATE_RISK",
         severity: late ? "WARNING" : "INFO",
         reason: late
-          ? "Dự kiến xong sau giờ hẹn trả khách"
-          : "Đơn đã kịp giờ hẹn trả",
+          ? "Expected to finish after the customer pickup time"
+          : "Order is back on time for pickup",
         active: late,
         now,
       });
@@ -163,8 +163,8 @@ export async function scanAlerts(now = new Date()) {
             type: remaining < 0 ? 'STAGE_LATE' : 'STAGE_APPROACHING',
             severity: remaining < 0 ? 'WARNING' : 'INFO',
             reason: remaining < 0
-              ? `${stageLabel(stage.stage)} đã trễ ${Math.abs(remaining)} phút`
-              : `${stageLabel(stage.stage)} cần xong trong ${remaining} phút nữa`,
+              ? `${stageLabel(stage.stage)} is ${Math.abs(remaining)} min late`
+              : `${stageLabel(stage.stage)} must finish within ${remaining} min`,
             active: remaining < 0 || remaining <= 5,
             now,
           });
@@ -181,7 +181,7 @@ export async function scanAlerts(now = new Date()) {
           batchId: batch.batchId,
           type: "MACHINE_FINISHED",
           severity: "INFO",
-          reason: "Máy đã chạy xong, cần lấy đồ ra",
+          reason: "Machine finished, needs unloading",
           active: Boolean(finishedStage),
           now,
         });
@@ -193,7 +193,7 @@ export async function scanAlerts(now = new Date()) {
           batchId: batch.batchId,
           type: "FORGOTTEN_WAITING",
           severity: "WARNING",
-          reason: "Mẻ đồ đang chờ vào máy quá lâu",
+          reason: "Batch has been waiting for a machine too long",
           active:
             batch.status === "WAITING" &&
             ["WASH", "DRY"].includes(batch.currentStage ?? "") &&
@@ -207,7 +207,7 @@ export async function scanAlerts(now = new Date()) {
           batchId: batch.batchId,
           type: "FORGOTTEN_UNLOAD",
           severity: "CRITICAL",
-          reason: "Mẻ đồ đã chạy xong nhưng chưa được lấy ra",
+          reason: "Batch finished but has not been unloaded",
           active:
             batch.status === "WAITING_FOR_UNLOAD" &&
             ageExceeded(
@@ -233,7 +233,7 @@ export async function scanAlerts(now = new Date()) {
         orderId: order.orderId,
         type: "FORGOTTEN_PACKING",
         severity: "WARNING",
-        reason: "Đơn hàng chờ xếp đồ quá lâu",
+        reason: "Order has been waiting to be packed too long",
         active:
           order.status === "FOLDING_PACKING" &&
           ageExceeded(lastCompletedAt ?? order.updatedAt, config.packing, now),
@@ -250,7 +250,7 @@ export async function scanAlerts(now = new Date()) {
         orderId: order.orderId,
         type: "FORGOTTEN_NOTIFICATION",
         severity: "WARNING",
-        reason: "Đơn đã sẵn sàng nhưng chưa gửi thông báo thành công",
+        reason: "Order is ready but the customer has not been notified",
         active:
           order.status === "READY" &&
           !notificationSent &&

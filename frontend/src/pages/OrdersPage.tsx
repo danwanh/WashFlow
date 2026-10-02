@@ -14,22 +14,22 @@ export function OrdersPage({
   const [error, setError] = useState('')
   const load = () => {
     setLoading(true)
-    void getOrders().then((result) => { setOrders(result); setError('') }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tải đơn hàng')).finally(() => setLoading(false))
+    void getOrders().then((result) => { setOrders(result); setError('') }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not load orders')).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
-  const openOrder = (order: OrderSummary) => onOpen({ id: String(order.order_id), rank: 0, action: 'XEM CHI TIẾT', customer: order.customer.name, group: order.service_type, detail: `${order.total_weight_kg}kg`, due: new Date(order.pickup_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), tone: 'slate', orderId: order.order_id })
+  const openOrder = (order: OrderSummary) => onOpen({ id: String(order.order_id), rank: 0, action: 'VIEW DETAILS', customer: order.customer.name, group: order.service_type, detail: `${order.total_weight_kg}kg`, due: new Date(order.pickup_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), tone: 'slate', orderId: order.order_id })
   return (
     <section className="view-panel">
       <ViewHeader
-        title="Danh sách đơn hàng hôm nay"
-        subtitle="Toàn bộ đơn hàng ca trực · Bấm xem chi tiết để theo dõi luồng đồ"
-        action="+ Tạo đơn mới"
+        title="Today's orders"
+        subtitle="All orders this shift · Open details to follow each order"
+        action="+ New order"
         onAction={onCreate}
         primary
       />
-       {loading && <p className="data-state">Đang tải đơn hàng...</p>}
-       {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Thử lại</button></p>}
-       {!loading && !error && orders.length === 0 && <p className="data-state">Chưa có đơn hàng trong hệ thống.</p>}
+       {loading && <p className="data-state">Loading orders...</p>}
+       {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Retry</button></p>}
+       {!loading && !error && orders.length === 0 && <p className="data-state">No orders in the system yet.</p>}
        {!loading && !error && orders.length > 0 && <OrdersTable orders={orders} onOpen={openOrder} />}
     </section>
   )

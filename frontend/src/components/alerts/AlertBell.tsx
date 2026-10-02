@@ -4,25 +4,25 @@ import { getAlerts, resolveAlert, snoozeAlert, type Alert } from '../../api'
 export type { Alert } from '../../api'
 
 const labels: Record<string, string> = {
-  LATE_RISK: 'Nguy cơ trễ',
-  MACHINE_FINISHED: 'Máy đã chạy xong',
-  FORGOTTEN_WAITING: 'Mẻ chờ quá lâu',
-  FORGOTTEN_UNLOAD: 'Chưa lấy đồ ra',
-  FORGOTTEN_PACKING: 'Chưa xếp đồ',
-  FORGOTTEN_NOTIFICATION: 'Chưa gửi tin khách',
-  STAGE_APPROACHING: 'Công đoạn sắp trễ',
-  STAGE_LATE: 'Công đoạn đã trễ',
+  LATE_RISK: 'Late risk',
+  MACHINE_FINISHED: 'Machine finished',
+  FORGOTTEN_WAITING: 'Batch waiting too long',
+  FORGOTTEN_UNLOAD: 'Not unloaded',
+  FORGOTTEN_PACKING: 'Not packed',
+  FORGOTTEN_NOTIFICATION: 'Customer not notified',
+  STAGE_APPROACHING: 'Stage almost late',
+  STAGE_LATE: 'Stage late',
 }
 
 const actionLabels: Record<string, string> = {
-  LATE_RISK: 'Xem đơn trễ',
-  MACHINE_FINISHED: 'Lấy đồ ra',
-  FORGOTTEN_WAITING: 'Cho vào máy giặt',
-  FORGOTTEN_UNLOAD: 'Lấy đồ ra',
-  FORGOTTEN_PACKING: 'Xếp đồ',
-  FORGOTTEN_NOTIFICATION: 'Gửi tin khách',
-  STAGE_APPROACHING: 'Xem công đoạn',
-  STAGE_LATE: 'Xem công đoạn',
+  LATE_RISK: 'View late order',
+  MACHINE_FINISHED: 'Unload',
+  FORGOTTEN_WAITING: 'Load washer',
+  FORGOTTEN_UNLOAD: 'Unload',
+  FORGOTTEN_PACKING: 'Pack',
+  FORGOTTEN_NOTIFICATION: 'Notify customer',
+  STAGE_APPROACHING: 'View stage',
+  STAGE_LATE: 'View stage',
 }
 
 function AlertBellItem({ alert, onChange }: { alert: Alert; onChange: () => void }) {
@@ -36,21 +36,21 @@ function AlertBellItem({ alert, onChange }: { alert: Alert; onChange: () => void
         <Bell size={15} />
       </div>
       <div className="alert-item-copy">
-        <strong>{labels[alert.type] ?? 'Cảnh báo'}</strong>
+        <strong>{labels[alert.type] ?? 'Alert'}</strong>
         <span>
-          Đơn #{alert.order_id}
-          {alert.batch_id ? ` · Mẻ ${alert.batch_id}` : ''}
+          Order #{alert.order_id}
+          {alert.batch_id ? ` · Batch ${alert.batch_id}` : ''}
         </span>
         <p>{alert.reason}</p>
-        <small>{new Date(alert.detected_at).toLocaleString('vi-VN')}</small>
+        <small>{new Date(alert.detected_at).toLocaleString('en-GB')}</small>
       </div>
       <div className="alert-item-actions">
         {alert.status === 'OPEN' && (
-          <button title="Nhắc lại sau 5 phút" onClick={() => void action(snoozeAlert)}>
+          <button title="Remind me in 5 minutes" onClick={() => void action(snoozeAlert)}>
             <Clock3 size={14} />
           </button>
         )}
-        <button title="Đánh dấu đã xử lý" onClick={() => void action(resolveAlert)}>
+        <button title="Mark as resolved" onClick={() => void action(resolveAlert)}>
           <Check size={14} />
         </button>
       </div>
@@ -118,11 +118,11 @@ export function AlertBell({
             <div className="alert-modal-icon">
               <Bell size={23} />
             </div>
-            <small>CẢNH BÁO VẬN HÀNH</small>
-            <h2 id="alert-modal-title">{labels[popupAlert.type] ?? 'Cảnh báo'}</h2>
+            <small>OPERATIONS ALERT</small>
+            <h2 id="alert-modal-title">{labels[popupAlert.type] ?? 'Alert'}</h2>
             <p>
-              Đơn #{popupAlert.order_id}
-              {popupAlert.batch_id ? ` · Mẻ ${popupAlert.batch_id}` : ''}
+              Order #{popupAlert.order_id}
+              {popupAlert.batch_id ? ` · Batch ${popupAlert.batch_id}` : ''}
             </p>
             <strong>{popupAlert.reason}</strong>
             <div className="alert-modal-actions">
@@ -133,23 +133,23 @@ export function AlertBell({
                   setPopupAlert(null)
                 }}
               >
-                {actionLabels[popupAlert.type] ?? 'Xử lý đơn hàng'}
+                {actionLabels[popupAlert.type] ?? 'Handle order'}
               </button>
               <button className="primary" onClick={() => void snooze()}>
-                <Clock3 size={15} /> Nhắc lại sau 5 phút
+                <Clock3 size={15} /> Remind me in 5 minutes
               </button>
             </div>
           </section>
         </div>
       )}
       {open && (
-        <section className="alert-panel" aria-label="Danh sách cảnh báo">
+        <section className="alert-panel" aria-label="Alert list">
           <header>
             <div>
-              <strong>Thông báo</strong>
-              <small>{alerts.length} cảnh báo cần chú ý</small>
+              <strong>Notifications</strong>
+              <small>{alerts.length} alerts need attention</small>
             </div>
-            <button onClick={() => setOpen(false)} aria-label="Đóng thông báo">
+            <button onClick={() => setOpen(false)} aria-label="Close notifications">
               <X size={17} />
             </button>
           </header>
@@ -159,7 +159,7 @@ export function AlertBell({
                 <AlertBellItem key={alert.alert_id} alert={alert} onChange={() => void refresh()} />
               ))
             ) : (
-              <p className="alert-empty">Không có cảnh báo đang hoạt động.</p>
+              <p className="alert-empty">No active alerts.</p>
             )}
           </div>
         </section>
@@ -167,7 +167,7 @@ export function AlertBell({
       <button
         className={`alert-bell ${alerts.length ? 'has-alerts' : ''}`}
         onClick={() => setOpen((value) => !value)}
-        aria-label="Mở thông báo"
+        aria-label="Open notifications"
       >
         <Bell size={22} />
         {alerts.length > 0 && <b>{alerts.length > 99 ? '99+' : alerts.length}</b>}

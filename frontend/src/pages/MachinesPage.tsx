@@ -13,9 +13,9 @@ import { Card } from '../components/machines/MachineComponents'
 import type { Task } from '../types/task'
 
 const statusText: Record<Machine['status'], string> = {
-  AVAILABLE: 'Đang trống',
-  BUSY: 'Đang chạy',
-  MAINTENANCE: 'Đang bảo trì',
+  AVAILABLE: 'Idle',
+  BUSY: 'Running',
+  MAINTENANCE: 'Under maintenance',
 }
 
 export function MachinesPage({ onOpen }: { onOpen: (task: Task) => void }) {
@@ -25,13 +25,13 @@ export function MachinesPage({ onOpen }: { onOpen: (task: Task) => void }) {
   const [loading, setLoading] = useState(true)
   const load = () => {
     setLoading(true)
-    void getMachines().then((result) => { setMachines(result); setError('') }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tải máy')).finally(() => setLoading(false))
+    void getMachines().then((result) => { setMachines(result); setError('') }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not load machines')).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
   const [switching, setSwitching] = useState<number | null>(null)
   const [pending, setPending] = useState<{ machine: Machine; impact: MaintenancePreview } | null>(null)
   const failed = (cause: unknown) =>
-    setError(cause instanceof Error ? cause.message : 'Không thể cập nhật trạng thái máy')
+    setError(cause instanceof Error ? cause.message : 'Could not update machine status')
   // Back to service is immediate; maintenance first shows what it would do to the schedule.
   const toggleMaintenance = async (machine: Machine) => {
     setError('')
@@ -65,16 +65,16 @@ export function MachinesPage({ onOpen }: { onOpen: (task: Task) => void }) {
   }
   return (
     <section className="view-panel">
-      <ViewHeader title="Giám sát thiết bị máy" subtitle="Trạng thái và lịch xử lý lấy trực tiếp từ hệ thống" action="← Về Hàng đợi" onAction={() => navigate('/queue')} />
-      {loading && <p className="data-state">Đang tải danh sách máy...</p>}
-      {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Thử lại</button></p>}
-      {!loading && !error && machines.length === 0 && <p className="data-state">Chưa có máy trong hệ thống.</p>}
+      <ViewHeader title="Machine monitor" subtitle="Live status and schedule from the system" action="← Back to queue" onAction={() => navigate('/queue')} />
+      {loading && <p className="data-state">Loading machines...</p>}
+      {error && <p className="queue-error">{error} <button className="table-action" onClick={load}>Retry</button></p>}
+      {!loading && !error && machines.length === 0 && <p className="data-state">No machines in the system yet.</p>}
       <div className="machine-board">
         {machines.map((machine) => {
           const active = machine.active_stage
           const tone = machine.status === 'BUSY' ? (active?.status === 'MACHINE_FINISHED' ? 'green' : 'blue') : machine.status === 'AVAILABLE' ? 'empty' : 'amber'
-          const task: Task = { id: String(active?.order_id ?? ''), rank: 0, action: 'XEM CHI TIẾT', customer: active?.customer ?? '', group: active?.stage ?? '', detail: '', due: '', tone: 'slate', orderId: active?.order_id ?? undefined }
-          return <Card key={machine.machine_id} name={machine.name} capacity={`${machine.type === 'WASHER' ? 'Giặt' : 'Sấy'} · ${machine.capacity_kg}kg`} state={statusText[machine.status]} tone={tone} detail={active ? `#${active.order_id} · ${active.customer}` : 'Sẵn sàng nhận đồ'} time={active?.planned_end_at ? `Đến ${new Date(active.planned_end_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : '0 phút'} maintenance={machine.status === 'MAINTENANCE'} switching={switching === machine.machine_id} onToggleMaintenance={() => void toggleMaintenance(machine)} action={active?.order_id ? 'Xem đơn' : undefined} onAction={() => onOpen(task)} />
+          const task: Task = { id: String(active?.order_id ?? ''), rank: 0, action: 'VIEW DETAILS', customer: active?.customer ?? '', group: active?.stage ?? '', detail: '', due: '', tone: 'slate', orderId: active?.order_id ?? undefined }
+          return <Card key={machine.machine_id} name={machine.name} capacity={`${machine.type === 'WASHER' ? 'Wash' : 'Dry'} · ${machine.capacity_kg}kg`} state={statusText[machine.status]} tone={tone} detail={active ? `#${active.order_id} · ${active.customer}` : 'Ready for laundry'} time={active?.planned_end_at ? `Until ${new Date(active.planned_end_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '0 min'} maintenance={machine.status === 'MAINTENANCE'} switching={switching === machine.machine_id} onToggleMaintenance={() => void toggleMaintenance(machine)} action={active?.order_id ? 'View order' : undefined} onAction={() => onOpen(task)} />
         })}
       </div>
       {pending && (

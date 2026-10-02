@@ -134,7 +134,7 @@ export async function describeOrders(
     const order = orders.find((item) => item.orderId === entry.orderId)
     return {
       order_id: entry.orderId,
-      customer: order?.customer.name ?? 'Không rõ khách hàng',
+      customer: order?.customer.name ?? 'Unknown customer',
       pickup_at: order?.pickupAt.toISOString() ?? null,
       estimated_at: entry.estimatedAt,
       late: entry.late,

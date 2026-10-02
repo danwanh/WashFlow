@@ -10,13 +10,13 @@ export function Topbar({ onCreate, taskCount }: TopbarProps) {
   const links = [
     {
       to: '/queue',
-      label: 'Hàng đợi',
+      label: 'Queue',
       icon: <ListFilter size={14} />,
       count: taskCount === null ? undefined : String(taskCount),
     },
-    { to: '/overview', label: 'Tổng quan', icon: <BarChart3 size={14} /> },
-    { to: '/orders', label: 'Đơn hàng', icon: <FileText size={14} /> },
-    { to: '/machines', label: 'Máy', icon: <WashingMachine size={14} /> },
+    { to: '/overview', label: 'Overview', icon: <BarChart3 size={14} /> },
+    { to: '/orders', label: 'Orders', icon: <FileText size={14} /> },
+    { to: '/machines', label: 'Machines', icon: <WashingMachine size={14} /> },
   ]
 
   return (
@@ -41,7 +41,7 @@ export function Topbar({ onCreate, taskCount }: TopbarProps) {
         ))}
       </nav>
       <div className="scenario-bar">
-        <button onClick={onCreate}>+ Tạo đơn</button>
+        <button onClick={onCreate}>+ New order</button>
       </div>
     </header>
   )

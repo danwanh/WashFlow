@@ -31,7 +31,7 @@ export function QueuePage({
   const loadError = queueQuery.error
     ? queueQuery.error instanceof Error
       ? queueQuery.error.message
-      : 'Không thể tải hàng đợi'
+      : 'Could not load the queue'
     : ''
   // A fresh queue replaces the message of an earlier failed action.
   useEffect(() => setError(''), [queueQuery.dataUpdatedAt])
@@ -58,7 +58,7 @@ export function QueuePage({
     customer: task.customer,
     group: task.group,
     detail: task.detail,
-    due: new Date(task.due).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    due: new Date(task.due).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
     tone:
       task.action_type === 'NOTIFY'
         ? 'green'
@@ -112,7 +112,7 @@ export function QueuePage({
       }
       onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể cập nhật tác vụ')
+      setError(cause instanceof Error ? cause.message : 'Could not update the task')
     }
   }
   // Dropping the bag from a finished machine onto its row unloads it right away,
@@ -123,7 +123,7 @@ export function QueuePage({
     void updateStage(task, 'unload')
       .then(onChanged)
       .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Không thể lấy đồ ra khỏi máy'),
+        setError(cause instanceof Error ? cause.message : 'Could not unload the machine'),
       )
   }
   const requestComplete = (task: Task) => {
@@ -166,30 +166,30 @@ export function QueuePage({
         <div className="queue-header">
           <div>
             <div className="title-row">
-              <h1>HÀNG ĐỢI CÔNG VIỆC</h1>
+              <h1>WORK QUEUE</h1>
               <button className="primary small" onClick={onCreate}>
-                <Plus size={17} /> Tạo đơn
+                <Plus size={17} /> New order
               </button>
             </div>
-            <p>Xếp theo thứ tự ưu tiên tự động · TIME → RESULT → ACTION · Bấm để xem chi tiết</p>
+            <p>Sorted by automatic priority · TIME → RESULT → ACTION · Click for details</p>
           </div>
           <div className="queue-tools">
             <label className="status-filter">
-              Trạng thái
+              Status
               <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-                <option value="all">Tất cả trạng thái</option>
-                <option value="processing">Đang chạy máy</option>
-                <option value="ready">Chờ dỡ đồ / gửi tin</option>
-                <option value="pending">Chờ làm (phân loại, vào máy, đóng gói)</option>
+                <option value="all">All statuses</option>
+                <option value="processing">Machines running</option>
+                <option value="ready">Waiting to unload / notify</option>
+                <option value="pending">To do (sort, load, pack)</option>
               </select>
             </label>
             <button className="primary small queue-create-button" onClick={onCreate}>
-              <Plus size={17} /> Tạo đơn
+              <Plus size={17} /> New order
             </button>
             <div className="count-chip">
-              <b>{tasks.length}</b> việc cần
+              <b>{tasks.length}</b> tasks to
               <br />
-              xử lý
+              handle
             </div>
           </div>
         </div>
@@ -222,14 +222,14 @@ export function QueuePage({
         </div>
         {(error || loadError) && <p className="queue-error">{error || loadError}</p>}
         {queue && visible.length === 0 && (
-          <div className="queue-empty">Không có công việc phù hợp với bộ lọc.</div>
+          <div className="queue-empty">No tasks match the filter.</div>
         )}
       </section>
       <div
         ref={resizeHandle}
         className={`workspace-resize-handle ${resizing ? 'resizing' : ''}`}
         role="separator"
-        aria-label="Điều chỉnh độ rộng khu vực máy"
+        aria-label="Resize the machine panel"
         aria-orientation="vertical"
         tabIndex={0}
         onPointerDown={(event) => {
@@ -269,7 +269,7 @@ export function QueuePage({
         onDrop={() => {
           if (!dragging) return
           if (!canDropOn(target ?? '')) {
-            setError('Chỉ được chọn máy đúng loại, đủ công suất và đang trống')
+            setError('Pick an idle machine of the right type with enough capacity')
             return
           }
           setDragging(null)
@@ -279,16 +279,16 @@ export function QueuePage({
             void updateStage(dragging, 'start', machine?.machine_id)
               .then(onChanged)
               .catch((cause) =>
-                setError(cause instanceof Error ? cause.message : 'Không thể đưa đồ vào máy'),
+                setError(cause instanceof Error ? cause.message : 'Could not load the machine'),
               )
           }
         }}
       />
       {confirming && (
         <ConfirmActionModal
-          title="Xác nhận hoàn tất tác vụ"
-          message={`${confirming.action} · Đơn #${confirming.id}. Xác nhận nhân viên đã hoàn tất bước này.`}
-          action="Xác nhận xong"
+          title="Confirm task completion"
+          message={`${confirming.action} · Order #${confirming.id}. Confirm that staff have finished this step.`}
+          action="Confirm done"
           onClose={() => setConfirming(null)}
           onConfirm={() => void confirmComplete()}
         />

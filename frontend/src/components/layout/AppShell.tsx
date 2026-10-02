@@ -42,13 +42,13 @@ export function AppShell({
       {import.meta.env.DEV && (
         <button
           className="dev-dismiss-all"
-          title="Chỉ có khi chạy dev: đóng mọi thông báo và popup cảnh báo đang chờ"
+          title="Dev only: close all notices and pending alert popups"
           onClick={() => {
             onDismissAllNotices()
             setAlertDismissSignal((value) => value + 1)
           }}
         >
-          <X size={14} /> Đóng tất cả thông báo
+          <X size={14} /> Close all notifications
         </button>
       )}
       {notices.length > 0 && (
@@ -60,7 +60,7 @@ export function AppShell({
                 <b>{notice.title}</b>
                 <span>{notice.detail}</span>
               </div>
-              <button onClick={() => onDismissNotice(notice.id)} aria-label="Đóng thông báo">
+              <button onClick={() => onDismissNotice(notice.id)} aria-label="Close notification">
                 <X size={17} />
               </button>
             </div>

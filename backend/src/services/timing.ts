@@ -53,7 +53,7 @@ export function stageTiming(
   let lateAt: number | null = null
   let delay = 0
   let remaining = 0
-  let label = 'Dự kiến'
+  let label = 'Planned'
 
   if (stage.status === 'COMPLETED') {
     phase = 'DONE'
@@ -64,7 +64,7 @@ export function stageTiming(
         ? Math.max(0, Math.round((expectedEnd - plannedEnd) / MINUTE))
         : 0
     status = delay > 0 ? 'COMPLETED_LATE' : 'COMPLETED_ON_TIME'
-    label = delay > 0 ? `Xong trễ ${delay} phút` : 'Xong đúng hạn'
+    label = delay > 0 ? `Finished ${delay} min late` : 'Finished on time'
   } else if (stage.status === 'MACHINE_FINISHED') {
     phase = 'WAITING_UNLOAD'
     expectedStart = stage.actualStartedAt?.getTime() ?? plannedStart
@@ -73,7 +73,7 @@ export function stageTiming(
     lateAt = waitingSince + thresholds.unloadThresholdMinutes * MINUTE
     delay = Math.max(0, Math.floor((now - lateAt) / MINUTE))
     status = now > lateAt ? 'LATE' : 'ON_TIME'
-    label = `Chờ dỡ ${Math.max(0, Math.floor((now - waitingSince) / MINUTE))} phút`
+    label = `Waiting to unload ${Math.max(0, Math.floor((now - waitingSince) / MINUTE))} min`
   } else if (stage.status === 'IN_PROGRESS') {
     phase = 'RUNNING'
     expectedStart = stage.actualStartedAt?.getTime() ?? plannedStart
@@ -85,11 +85,11 @@ export function stageTiming(
     if (expectedEnd !== null && now > expectedEnd) {
       status = 'LATE'
       delay = Math.ceil((now - expectedEnd) / MINUTE)
-      label = `Trễ công đoạn ${delay} phút`
+      label = `Stage late ${delay} min`
     } else {
       remaining = expectedEnd === null ? 0 : Math.ceil((expectedEnd - now) / MINUTE)
       status = expectedEnd !== null && expectedEnd - now <= approaching ? 'APPROACHING' : 'ON_TIME'
-      label = `Còn ${remaining} phút`
+      label = `${remaining} min left`
     }
   } else if (context.current) {
     // Machine stages are late once their planned start passes; manual stages once their planned end passes.
@@ -99,15 +99,15 @@ export function stageTiming(
     if (lateAt !== null && now > lateAt) {
       status = 'LATE'
       delay = Math.ceil((now - lateAt) / MINUTE)
-      label = `Trễ công đoạn ${delay} phút`
+      label = `Stage late ${delay} min`
     } else {
       remaining = lateAt === null ? 0 : Math.ceil((lateAt - now) / MINUTE)
       status = lateAt !== null && lateAt - now <= approaching ? 'APPROACHING' : 'ON_TIME'
       label = isManualStage(stage.stage)
         ? waitingSince !== null
-          ? `Chờ ${Math.max(0, Math.floor((now - waitingSince) / MINUTE))} phút`
-          : `Còn ${remaining} phút`
-        : `Vào máy sau ${remaining} phút`
+          ? `Waiting ${Math.max(0, Math.floor((now - waitingSince) / MINUTE))} min`
+          : `${remaining} min left`
+        : `Load in ${remaining} min`
     }
   }
 

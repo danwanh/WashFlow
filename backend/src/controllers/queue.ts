@@ -4,15 +4,15 @@ import { batchTimings, isManualStage, remainingWorkMs } from '../services/timing
 import { autoFinishMachines } from '../services/workflow.js'
 
 const MINUTE = 60_000
-const machineLabel = (stage: string) => (stage === 'WASH' ? 'GIẶT' : 'SẤY')
+const machineLabel = (stage: string) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
 const machineType = (stage: string) => (stage === 'WASH' ? 'WASHER' : 'DRYER')
 const stageStatusLabel = (status: string) =>
   ({
-    PLANNED: 'Chờ vào máy',
-    IN_PROGRESS: 'Đang chạy',
-    MACHINE_FINISHED: 'Đã chạy xong, chờ dỡ',
-    COMPLETED: 'Hoàn tất',
-  })[status] ?? 'Đang xử lý'
+    PLANNED: 'Waiting for machine',
+    IN_PROGRESS: 'Running',
+    MACHINE_FINISHED: 'Finished, waiting to unload',
+    COMPLETED: 'Completed',
+  })[status] ?? 'Processing'
 const minutes = (ms: number) => Math.max(0, Math.round(ms / MINUTE))
 
 export async function list(_req: Request, res: Response) {
@@ -55,17 +55,17 @@ export async function list(_req: Request, res: Response) {
         ...common,
         batch_id: null,
         batch_stage_id: null,
-        action: 'CHỜ GỬI TIN KHÁCH',
+        action: 'NOTIFY CUSTOMER',
         action_type: 'NOTIFY',
-        group: 'Đơn hàng',
-        detail: 'Đơn đã sẵn sàng',
+        group: 'Order',
+        detail: 'Order is ready',
         batch_status: null,
         stage_status: null,
         // No work left, so the slack is simply the time until pickup (negative once overdue).
         slack_minutes: Math.round((order.pickupAt.getTime() - now.getTime()) / MINUTE),
         machine_id: null,
         machine_name: null,
-        button: 'Gửi tin khách',
+        button: 'Notify customer',
         weight_kg: null,
         planned_start_at: null,
         planned_end_at: null,
@@ -80,7 +80,7 @@ export async function list(_req: Request, res: Response) {
         approaching_at: null,
         delay_minutes: minutes(now.getTime() - lateAt),
         remaining_minutes: 0,
-        timing_label: `Chờ gửi tin ${minutes(now.getTime() - readySince)} phút`,
+        timing_label: `Waiting to notify ${minutes(now.getTime() - readySince)} min`,
       })
     }
 
@@ -101,14 +101,14 @@ export async function list(_req: Request, res: Response) {
       const machine = stage.machine
       const action =
         stage.stage === 'CLASSIFY'
-          ? 'PHÂN LOẠI'
+          ? 'SORT'
           : stage.stage === 'PACKING'
-            ? 'XẾP ĐỒ'
+            ? 'PACK'
             : stage.status === 'MACHINE_FINISHED'
-              ? `LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
+              ? `UNLOAD · ${machine?.name ?? machineLabel(stage.stage)}`
               : stage.status === 'IN_PROGRESS'
-                ? `CHỜ LẤY ĐỒ RA · ${machine?.name ?? machineLabel(stage.stage)}`
-                : `VÀO MÁY ${machineLabel(stage.stage)} · ${machine?.name ?? 'CHƯA GÁN MÁY'}`
+                ? `RUNNING · ${machine?.name ?? machineLabel(stage.stage)}`
+                : `LOAD ${machineLabel(stage.stage)} · ${machine?.name ?? 'NO MACHINE ASSIGNED'}`
       const actionType =
         stage.stage === 'CLASSIFY'
           ? 'CLASSIFY'
@@ -120,11 +120,11 @@ export async function list(_req: Request, res: Response) {
                 ? 'MACHINE_FINISHED'
                 : 'START'
       const button = manual
-        ? 'Xong'
+        ? 'Done'
         : stage.status === 'MACHINE_FINISHED'
-          ? 'Xong'
+          ? 'Done'
           : stage.status === 'IN_PROGRESS'
-            ? 'Máy xong'
+            ? 'Machine done'
             : null
       tasks.push({
         ...common,
@@ -133,12 +133,12 @@ export async function list(_req: Request, res: Response) {
         stage: stage.stage,
         action,
         action_type: actionType,
-        group: `Mẻ ${batch.batchNo}`,
+        group: `Batch ${batch.batchNo}`,
         detail: `${Number(batch.weightKg).toFixed(1)}kg · ${
           stage.stage === 'CLASSIFY'
-            ? 'Chờ phân loại'
+            ? 'Waiting to sort'
             : stage.stage === 'PACKING'
-              ? 'Chờ xếp đồ'
+              ? 'Waiting to pack'
               : stageStatusLabel(stage.status)
         }`,
         weight_kg: Number(batch.weightKg),

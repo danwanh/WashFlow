@@ -1,4 +1,4 @@
-// High-load scenario for trying "đôn đơn" (moving a pickup earlier): more open washing work than
+// High-load scenario for trying a rush order (moving a pickup earlier): more open washing work than
 // the washers can run at once, so pulling one order forward has to take other orders' machine
 // slots. Wipes all tables like seed.ts, lets the real rescheduler plan everything, then prints
 // the schedule and dry-runs a few earlier pickups for the last-finishing order (nothing is saved).
@@ -20,24 +20,24 @@ import {
 const MINUTE = 60_000
 
 const machines = [
-  { name: 'Máy giặt 01', type: 'WASHER', capacityKg: 8, processingMinutes: 45 },
+  { name: 'Washer 01', type: 'WASHER', capacityKg: 8, processingMinutes: 45 },
   {
-    name: 'Máy giặt 02',
+    name: 'Washer 02',
     type: 'WASHER',
     capacityKg: 10,
     processingMinutes: 50,
   },
   {
-    name: 'Máy giặt 03',
+    name: 'Washer 03',
     type: 'WASHER',
     capacityKg: 12,
     processingMinutes: 55,
   },
-  { name: 'Máy giặt 04', type: 'WASHER', capacityKg: 8, processingMinutes: 40 },
-  { name: 'Máy sấy 01', type: 'DRYER', capacityKg: 8, processingMinutes: 50 },
-  { name: 'Máy sấy 02', type: 'DRYER', capacityKg: 10, processingMinutes: 55 },
-  { name: 'Máy sấy 03', type: 'DRYER', capacityKg: 12, processingMinutes: 60 },
-  { name: 'Máy sấy 04', type: 'DRYER', capacityKg: 8, processingMinutes: 45 },
+  { name: 'Washer 04', type: 'WASHER', capacityKg: 8, processingMinutes: 40 },
+  { name: 'Dryer 01', type: 'DRYER', capacityKg: 8, processingMinutes: 50 },
+  { name: 'Dryer 02', type: 'DRYER', capacityKg: 10, processingMinutes: 55 },
+  { name: 'Dryer 03', type: 'DRYER', capacityKg: 12, processingMinutes: 60 },
+  { name: 'Dryer 04', type: 'DRYER', capacityKg: 8, processingMinutes: 45 },
 ] as const
 
 // Every order is already sorted and waiting for a washer, about three washer rounds of work.
@@ -52,7 +52,7 @@ const orders: Array<{
   priority: number
 }> = [
   {
-    customer: 'Trần Minh Khoa',
+    customer: 'Oliver Parker',
     service: 'WASH',
     itemType: 'shirt',
     weightKg: 4,
@@ -60,7 +60,7 @@ const orders: Array<{
     priority: 1,
   },
   {
-    customer: 'Lê Thảo Vy',
+    customer: 'Chloe Evans',
     service: 'WASH',
     itemType: 'towel',
     weightKg: 5,
@@ -68,7 +68,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Ngô Bảo Anh',
+    customer: 'Ryan Collins',
     service: 'WASH',
     itemType: 'dress',
     weightKg: 3.5,
@@ -76,7 +76,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Đặng Gia Hân',
+    customer: 'Zoe Edwards',
     service: 'WASH',
     itemType: 'shirt',
     weightKg: 4.5,
@@ -84,7 +84,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Bùi Đức Long',
+    customer: 'Nathan Stewart',
     service: 'WASH',
     itemType: 'towel',
     weightKg: 6,
@@ -92,7 +92,7 @@ const orders: Array<{
     priority: 1,
   },
   {
-    customer: 'Vũ Tuấn Kiệt',
+    customer: 'Lily Morris',
     service: 'WASH',
     itemType: 'trousers',
     weightKg: 5,
@@ -100,7 +100,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Đỗ Ngọc Lan',
+    customer: 'Dylan Rogers',
     service: 'WASH',
     itemType: 'shirt',
     weightKg: 3,
@@ -108,7 +108,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Phạm Quốc Huy',
+    customer: 'Hannah Reed',
     service: 'WASH',
     itemType: 'trousers',
     weightKg: 6,
@@ -116,7 +116,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Hoàng Mai Chi',
+    customer: 'Owen Cook',
     service: 'WASH_DRY',
     itemType: 'blanket',
     weightKg: 7,
@@ -124,7 +124,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Phan Hải Đăng',
+    customer: 'Ella Morgan',
     service: 'WASH',
     itemType: 'towel',
     weightKg: 4,
@@ -132,7 +132,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Trịnh Thu Trang',
+    customer: 'Caleb Bell',
     service: 'WASH',
     itemType: 'dress',
     weightKg: 5.5,
@@ -140,7 +140,7 @@ const orders: Array<{
     priority: 0,
   },
   {
-    customer: 'Mai Anh Tuấn',
+    customer: 'Aria Murphy',
     service: 'WASH',
     itemType: 'shirt',
     weightKg: 4,
@@ -248,7 +248,7 @@ async function seed(now: Date) {
 }
 
 const time = (value: Date | string | number) =>
-  new Date(value).toLocaleTimeString('vi-VN', {
+  new Date(value).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -290,7 +290,7 @@ async function report() {
     baseline.affectedOrders.map((entry) => [entry.orderId, entry]),
   )
 
-  console.log(`\nLịch sau khi seed (bây giờ ${time(now)}):`)
+  console.log(`\nSchedule after seeding (now ${time(now)}):`)
   console.table(
     [...state.orders]
       .sort((a, b) => a.orderId - b.orderId)
@@ -304,14 +304,14 @@ async function report() {
               `${machineName.get(stage.machineId!)} ${time(stage.plannedStartAt!)}`,
           )
         return {
-          Đơn: `#${order.orderId}`,
-          Hẹn: time(order.pickupAt),
-          'Dự kiến xong': time(entry.estimatedAt),
-          'Dư (phút)': Math.round(
+          Order: `#${order.orderId}`,
+          Pickup: time(order.pickupAt),
+          'Expected done': time(entry.estimatedAt),
+          'Slack (min)': Math.round(
             (order.pickupAt.getTime() - new Date(entry.estimatedAt).getTime()) /
               MINUTE,
           ),
-          Máy: machineStages.join(' → '),
+          Machines: machineStages.join(' → '),
         }
       }),
   )
@@ -361,14 +361,14 @@ async function report() {
   }
 
   console.log(
-    `\nThử đôn đơn #${target.orderId} (đang dự kiến xong ${time(targetEta)}):`,
+    `\nTrying to rush order #${target.orderId} (currently expected done ${time(targetEta)}):`,
   )
   console.log(
-    `  • Hẹn ≥ ${time(targetEta)}: lịch không đổi, không đơn nào bị ảnh hưởng.`,
+    `  • Pickup ≥ ${time(targetEta)}: schedule unchanged, no orders affected.`,
   )
   if (displaced)
     console.log(
-      `  • Hẹn ${time(displaced.at)}: khả thi, đơn ${displaced.orderIds.map((id) => `#${id}`).join(', ')} bị đổi lịch máy nhưng vẫn đúng hẹn.`,
+      `  • Pickup ${time(displaced.at)}: feasible; orders ${displaced.orderIds.map((id) => `#${id}`).join(', ')} get new machine slots but stay on time.`,
     )
   if (rejected) {
     const earliest = earliestFeasiblePickup(
@@ -379,11 +379,11 @@ async function report() {
       now,
     )
     console.log(
-      `  • Hẹn ${time(rejected.at)}: bị từ chối${rejected.lateIds.length ? `, vì đơn ${rejected.lateIds.map((id) => `#${id}`).join(', ')} sẽ trễ` : ', vì chính đơn này không kịp'}. Giờ sớm nhất gợi ý: ${earliest ? time(earliest) : 'không có'}.`,
+      `  • Pickup ${time(rejected.at)}: rejected${rejected.lateIds.length ? `, because orders ${rejected.lateIds.map((id) => `#${id}`).join(', ')} would be late` : ', because this order itself cannot make it'}. Suggested earliest time: ${earliest ? time(earliest) : 'none'}.`,
     )
   }
   console.log(
-    '\nMở đơn trên trang Hàng đợi / Đơn hàng và đổi giờ hẹn để xem bản xem trước.\n',
+    '\nOpen the order on the Queue / Orders page and change its pickup time to see the preview.\n',
   )
 }
 

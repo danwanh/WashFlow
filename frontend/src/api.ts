@@ -253,24 +253,24 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...init.headers },
     })
   } catch {
-    throw new Error('Không thể kết nối máy chủ. Vui lòng thử lại.')
+    throw new Error('Cannot reach the server. Please try again.')
   }
   const body = (await response.json().catch(() => ({}))) as T & {
     error?: { code?: string; message?: string; details?: unknown }
   }
   if (!response.ok) {
     const messages: Record<string, string> = {
-      MACHINE_UNAVAILABLE: 'Máy không phù hợp hoặc đang được sử dụng',
-      INVALID_STATE: 'Tác vụ chưa sẵn sàng để thực hiện',
-      STAGE_LOCKED: 'Tác vụ đang chạy và không thể thay đổi',
-      NOTIFICATION_FAILED: 'Không gửi được thông báo cho khách',
-      NOT_FOUND: 'Không tìm thấy dữ liệu tác vụ',
-      PICKUP_UNFEASIBLE: 'Giờ hẹn mới không khả thi với lịch xử lý hiện tại',
+      MACHINE_UNAVAILABLE: 'Machine is unsuitable or already in use',
+      INVALID_STATE: 'This task is not ready yet',
+      STAGE_LOCKED: 'This task is running and cannot be changed',
+      NOTIFICATION_FAILED: 'Could not send the customer notification',
+      NOT_FOUND: 'Task data not found',
+      PICKUP_UNFEASIBLE: 'The new pickup time is not feasible with the current schedule',
       STALE_PLAN:
-        'Lịch xử lý đã thay đổi, kế hoạch không còn kịp giờ hẹn. Vui lòng lập lại kế hoạch.',
+        'The schedule has changed and this plan no longer meets the pickup time. Please plan again.',
     }
     const error = new Error(
-      messages[body.error?.code ?? ''] ?? 'Không thể cập nhật dữ liệu. Vui lòng thử lại.',
+      messages[body.error?.code ?? ''] ?? 'Could not update data. Please try again.',
     ) as Error & { code?: string; details?: unknown }
     error.code = body.error?.code
     error.details = body.error?.details

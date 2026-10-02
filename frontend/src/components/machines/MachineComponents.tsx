@@ -79,7 +79,7 @@ export function Card({
       </div>
       <footer>
         <div>
-          <small>{action ? 'Đơn hàng:' : tone === 'empty' ? 'Khả dụng:' : 'Đang chạy:'}</small>
+          <small>{action ? 'Order:' : tone === 'empty' ? 'Available:' : 'Running:'}</small>
           <b>{detail}</b>
         </div>
         {onToggleMaintenance ? (
@@ -89,7 +89,7 @@ export function Card({
               type="button"
               role="switch"
               aria-checked={!maintenance}
-              aria-label={`${name}: ${maintenance ? 'Bảo trì' : 'Khả dụng'}`}
+              aria-label={`${name}: ${maintenance ? 'Maintenance' : 'Available'}`}
               className={`machine-service-switch ${maintenance ? 'maintenance' : ''}`}
               disabled={switching}
               onClick={onToggleMaintenance}
@@ -98,7 +98,7 @@ export function Card({
                 <span className="machine-service-thumb" />
               </span>
               {maintenance ? <Wrench size={14} /> : <CheckCircle2 size={14} />}
-              {maintenance ? 'Bảo trì' : 'Khả dụng'}
+              {maintenance ? 'Maintenance' : 'Available'}
             </button>
             {action && <button className="done" onClick={onAction}>{action}</button>}
           </div>

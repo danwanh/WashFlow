@@ -4,6 +4,7 @@
 // to now so the queue, alerts and overview show each case right after seeding. Statuses of
 // batches, orders and machines are derived from the stages the same way the workflow does.
 // Alerts are not seeded (except history): the server's alert scan creates them on its next tick.
+// `--on-time` (npm run db:seed:ontime) seeds a calmer set instead: no stage late, no alerts.
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient, Prisma } from '../generated/prisma/client.js'
@@ -126,6 +127,22 @@ const washed = (
   finishedAt: start + minutes,
   endedAt: start + minutes + 3,
 })
+// A finished machine stage unloaded right at its planned end, so it does not count as late.
+const unloaded = (
+  stage: 'WASH' | 'DRY',
+  machine: string,
+  start: number,
+  minutes: number,
+): StageSpec => ({
+  stage,
+  status: 'COMPLETED',
+  machine,
+  start,
+  end: start + minutes + 3,
+  startedAt: start,
+  finishedAt: start + minutes,
+  endedAt: start + minutes + 3,
+})
 const packed = (start: number, end = start + 15): StageSpec => ({
   stage: 'PACKING',
   status: 'COMPLETED',
@@ -138,28 +155,28 @@ const packed = (start: number, end = start + 15): StageSpec => ({
 // ---- machines ---------------------------------------------------------------------------------
 
 const machineSpecs = [
-  { name: 'Máy giặt 01', type: 'WASHER', capacityKg: 8, processingMinutes: 45 },
-  { name: 'Máy giặt 02', type: 'WASHER', capacityKg: 10, processingMinutes: 50 },
-  { name: 'Máy giặt 03', type: 'WASHER', capacityKg: 12, processingMinutes: 55 },
+  { name: 'Washer 01', type: 'WASHER', capacityKg: 8, processingMinutes: 45 },
+  { name: 'Washer 02', type: 'WASHER', capacityKg: 10, processingMinutes: 50 },
+  { name: 'Washer 03', type: 'WASHER', capacityKg: 12, processingMinutes: 55 },
   // Out of service: tests that it gets no work and can be switched back.
-  { name: 'Máy giặt 04', type: 'WASHER', capacityKg: 8, processingMinutes: 40, maintenance: true },
-  { name: 'Máy giặt 05', type: 'WASHER', capacityKg: 15, processingMinutes: 60 },
-  { name: 'Máy giặt 06', type: 'WASHER', capacityKg: 10, processingMinutes: 45 },
-  { name: 'Máy sấy 01', type: 'DRYER', capacityKg: 8, processingMinutes: 50 },
-  { name: 'Máy sấy 02', type: 'DRYER', capacityKg: 10, processingMinutes: 55 },
-  { name: 'Máy sấy 03', type: 'DRYER', capacityKg: 12, processingMinutes: 60 },
-  { name: 'Máy sấy 04', type: 'DRYER', capacityKg: 8, processingMinutes: 45 },
+  { name: 'Washer 04', type: 'WASHER', capacityKg: 8, processingMinutes: 40, maintenance: true },
+  { name: 'Washer 05', type: 'WASHER', capacityKg: 15, processingMinutes: 60 },
+  { name: 'Washer 06', type: 'WASHER', capacityKg: 10, processingMinutes: 45 },
+  { name: 'Dryer 01', type: 'DRYER', capacityKg: 8, processingMinutes: 50 },
+  { name: 'Dryer 02', type: 'DRYER', capacityKg: 10, processingMinutes: 55 },
+  { name: 'Dryer 03', type: 'DRYER', capacityKg: 12, processingMinutes: 60 },
+  { name: 'Dryer 04', type: 'DRYER', capacityKg: 8, processingMinutes: 45 },
 ] as const
 
-const W1 = 'Máy giặt 01'
-const W2 = 'Máy giặt 02'
-const W3 = 'Máy giặt 03'
-const W5 = 'Máy giặt 05'
-const W6 = 'Máy giặt 06'
-const D1 = 'Máy sấy 01'
-const D2 = 'Máy sấy 02'
-const D3 = 'Máy sấy 03'
-const D4 = 'Máy sấy 04'
+const W1 = 'Washer 01'
+const W2 = 'Washer 02'
+const W3 = 'Washer 03'
+const W5 = 'Washer 05'
+const W6 = 'Washer 06'
+const D1 = 'Dryer 01'
+const D2 = 'Dryer 02'
+const D3 = 'Dryer 03'
+const D4 = 'Dryer 04'
 
 // ---- scenarios --------------------------------------------------------------------------------
 
@@ -168,8 +185,8 @@ const DAY = 24 * 60
 const orders: OrderSpec[] = [
   // RECEIVED ----------------------------------------------------------------------------------
   {
-    scenario: 'Vừa nhận đơn, đang phân loại',
-    customer: ['Trần Minh Anh', '0901000001'],
+    scenario: 'Just received, sorting',
+    customer: ['Emma Johnson', '0901000001'],
     service: 'WASH_DRY',
     createdAt: -3,
     pickupAt: 240,
@@ -187,8 +204,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Phân loại quá hạn (trễ công đoạn thủ công)',
-    customer: ['Lê Hoàng Nam', '0901000002'],
+    scenario: 'Sorting overdue (manual stage late)',
+    customer: ['Liam Smith', '0901000002'],
     service: 'WASH',
     priority: 1,
     createdAt: -40,
@@ -202,12 +219,12 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Một món nặng tách thành 2 mẻ',
-    customer: ['Phạm Thu Hà', '0901000003'],
+    scenario: 'One heavy item split into 2 batches',
+    customer: ['Olivia Brown', '0901000003'],
     service: 'WASH_DRY',
     createdAt: -5,
     pickupAt: 360,
-    items: [{ type: 'blanket', quantity: 3, kg: 18, note: 'Chăn bông lớn' }],
+    items: [{ type: 'blanket', quantity: 3, kg: 18, note: 'Large comforter' }],
     batches: [
       {
         items: [[0, 10]],
@@ -230,14 +247,14 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Nhiều món cùng nhóm gộp chung 1 mẻ',
-    customer: ['Đỗ Gia Bảo', '0901000004'],
+    scenario: 'Several items of one group merged into 1 batch',
+    customer: ['Noah Davis', '0901000004'],
     service: 'WASH',
     createdAt: -6,
     pickupAt: 300,
     items: [
       { type: 'shirt', quantity: 4, kg: 2 },
-      { type: 'white', quantity: 3, kg: 1.5, note: 'Đồ trắng' },
+      { type: 'white', quantity: 3, kg: 1.5, note: 'Whites' },
     ],
     batches: [
       {
@@ -252,8 +269,8 @@ const orders: OrderSpec[] = [
 
   // WAITING -----------------------------------------------------------------------------------
   {
-    scenario: 'Đã phân loại, chưa đến giờ vào máy',
-    customer: ['Vũ Ngọc Lan', '0901000005'],
+    scenario: 'Sorted, not yet time to load',
+    customer: ['Ava Wilson', '0901000005'],
     service: 'WASH_DRY',
     createdAt: -30,
     pickupAt: 240,
@@ -271,8 +288,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Đến giờ vào máy (kéo túi vào máy giặt trống)',
-    customer: ['Hoàng Đức Huy', '0901000006'],
+    scenario: 'Time to load (drag the bag onto an idle washer)',
+    customer: ['James Taylor', '0901000006'],
     service: 'WASH_DRY',
     createdAt: -25,
     pickupAt: 200,
@@ -290,8 +307,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Chờ vào máy quá lâu (cảnh báo quên mẻ chờ)',
-    customer: ['Bùi Thị Mai', '0901000007'],
+    scenario: 'Waiting for a machine too long (forgotten batch alert)',
+    customer: ['Sophia Anderson', '0901000007'],
     service: 'WASH',
     createdAt: -65,
     pickupAt: 120,
@@ -304,8 +321,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Đang giặt',
-    customer: ['Ngô Quốc Việt', '0901000008'],
+    scenario: 'Washing',
+    customer: ['Lucas Thomas', '0901000008'],
     service: 'WASH_DRY',
     createdAt: -25,
     pickupAt: 180,
@@ -323,8 +340,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Sắp giặt xong (máy tự chuyển sang chờ lấy đồ sau ~3 phút)',
-    customer: ['Đặng Thùy Linh', '0901000009'],
+    scenario: 'Almost washed (machine switches to waiting for unload in ~3 min)',
+    customer: ['Mia Martinez', '0901000009'],
     service: 'WASH',
     createdAt: -65,
     pickupAt: 120,
@@ -337,8 +354,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Giặt xong, chờ lấy đồ ra',
-    customer: ['Phan Văn Tài', '0901000010'],
+    scenario: 'Washed, waiting to unload',
+    customer: ['Ethan Moore', '0901000010'],
     service: 'WASH_DRY',
     createdAt: -80,
     pickupAt: 200,
@@ -356,8 +373,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Sấy xong nhưng quên lấy đồ (cảnh báo nghiêm trọng)',
-    customer: ['Lý Hải Yến', '0901000011'],
+    scenario: 'Dried but not unloaded (critical alert)',
+    customer: ['Isabella Clark', '0901000011'],
     service: 'WASH_DRY',
     priority: 1,
     createdAt: -150,
@@ -376,8 +393,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Đang sấy',
-    customer: ['Trịnh Gia Hân', '0901000012'],
+    scenario: 'Drying',
+    customer: ['Mason Lewis', '0901000012'],
     service: 'WASH_DRY',
     createdAt: -120,
     pickupAt: 120,
@@ -395,12 +412,12 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Dịch vụ chỉ sấy, đến giờ vào máy sấy',
-    customer: ['Mai Anh Tuấn', '0901000013'],
+    scenario: 'Dry-only service, time to load the dryer',
+    customer: ['Charlotte Walker', '0901000013'],
     service: 'DRY',
     createdAt: -15,
     pickupAt: 150,
-    items: [{ type: 'blanket', quantity: 1, kg: 3, note: 'Chỉ sấy khô' }],
+    items: [{ type: 'blanket', quantity: 1, kg: 3, note: 'Dry only' }],
     batches: [
       {
         items: [[0, 3]],
@@ -409,13 +426,13 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Nguy cơ trễ hẹn (cảnh báo đã hoãn 20 phút)',
-    customer: ['Hồ Thanh Tâm', '0901000014'],
+    scenario: 'Late risk (alert snoozed 20 min)',
+    customer: ['Logan Hall', '0901000014'],
     service: 'WASH_DRY',
     priority: 1,
     createdAt: -40,
     pickupAt: 90,
-    items: [{ type: 'delicate', quantity: 3, kg: 2, note: 'Đồ len, giặt nhẹ' }],
+    items: [{ type: 'delicate', quantity: 3, kg: 2, note: 'Wool, gentle wash' }],
     batches: [
       {
         items: [[0, 2]],
@@ -432,15 +449,15 @@ const orders: OrderSpec[] = [
         type: 'LATE_RISK',
         severity: 'WARNING',
         status: 'SNOOZED',
-        reason: 'Dự kiến xong sau giờ hẹn trả khách',
+        reason: 'Expected to finish after the customer pickup time',
         detectedAt: -10,
         snoozedUntil: 20,
       },
     ],
   },
   {
-    scenario: 'Đã quá giờ hẹn trả',
-    customer: ['Châu Minh Khoa', '0901000015'],
+    scenario: 'Past the pickup time',
+    customer: ['Amelia Young', '0901000015'],
     service: 'WASH_DRY',
     createdAt: -200,
     pickupAt: -20,
@@ -458,8 +475,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Đơn 2 mẻ tiến độ khác nhau (1 mẻ đang giặt, 1 mẻ chờ đóng gói)',
-    customer: ['Tạ Bích Ngọc', '0901000016'],
+    scenario: '2-batch order at different stages (1 washing, 1 waiting to pack)',
+    customer: ['Benjamin King', '0901000016'],
     service: 'WASH',
     createdAt: -90,
     pickupAt: 240,
@@ -479,8 +496,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Khách đã dời giờ hẹn trả',
-    customer: ['Dương Khánh Vy', '0901000017'],
+    scenario: 'Customer moved the pickup time',
+    customer: ['Harper Wright', '0901000017'],
     service: 'WASH',
     createdAt: -20,
     pickupAt: 300,
@@ -491,11 +508,11 @@ const orders: OrderSpec[] = [
         stages: [sorted(-20, -10), planned('WASH', 100, 145, W6), planned('PACKING', 145, 160)],
       },
     ],
-    appointments: [{ oldPickupAt: 60, at: -8, reason: 'Khách hẹn lấy muộn hơn' }],
+    appointments: [{ oldPickupAt: 60, at: -8, reason: 'Customer asked for a later pickup' }],
   },
   {
-    scenario: 'Hẹn trả ngày mai',
-    customer: ['Kiều Văn Lộc', '0901000018'],
+    scenario: 'Pickup tomorrow',
+    customer: ['Henry Scott', '0901000018'],
     service: 'WASH_DRY',
     createdAt: -10,
     pickupAt: DAY + 120,
@@ -515,8 +532,8 @@ const orders: OrderSpec[] = [
 
   // FOLDING_PACKING ---------------------------------------------------------------------------
   {
-    scenario: 'Giặt sấy xong, chờ đóng gói',
-    customer: ['Lâm Nhật Minh', '0901000019'],
+    scenario: 'Washed and dried, waiting to pack',
+    customer: ['Evelyn Green', '0901000019'],
     service: 'WASH_DRY',
     createdAt: -150,
     pickupAt: 60,
@@ -534,8 +551,8 @@ const orders: OrderSpec[] = [
     ],
   },
   {
-    scenario: 'Quên đóng gói (cảnh báo chờ xếp đồ quá lâu)',
-    customer: ['Quách Thảo Nhi', '0901000020'],
+    scenario: 'Packing forgotten (waiting to pack too long alert)',
+    customer: ['Jack Baker', '0901000020'],
     service: 'WASH',
     createdAt: -200,
     pickupAt: 15,
@@ -550,8 +567,8 @@ const orders: OrderSpec[] = [
 
   // READY -------------------------------------------------------------------------------------
   {
-    scenario: 'Sẵn sàng, chưa báo khách',
-    customer: ['Nguyễn Văn An', '0901000021'],
+    scenario: 'Ready, customer not notified',
+    customer: ['Abigail Adams', '0901000021'],
     service: 'WASH',
     createdAt: -110,
     pickupAt: 60,
@@ -565,8 +582,8 @@ const orders: OrderSpec[] = [
     readyAt: -5,
   },
   {
-    scenario: 'Gửi tin báo khách thất bại (cảnh báo chưa báo khách)',
-    customer: ['Võ Thị Hồng', '0901000022'],
+    scenario: 'Customer notification failed (not notified alert)',
+    customer: ['Daniel Nelson', '0901000022'],
     service: 'WASH_DRY',
     createdAt: -200,
     pickupAt: 30,
@@ -588,8 +605,8 @@ const orders: OrderSpec[] = [
 
   // COMPLETED ---------------------------------------------------------------------------------
   {
-    scenario: 'Hoàn tất đúng hẹn',
-    customer: ['Trần Quang Duy', '0901000023'],
+    scenario: 'Completed on time',
+    customer: ['Emily Carter', '0901000023'],
     service: 'WASH_DRY',
     createdAt: -300,
     pickupAt: -30,
@@ -613,15 +630,15 @@ const orders: OrderSpec[] = [
         type: 'MACHINE_FINISHED',
         severity: 'INFO',
         status: 'RESOLVED',
-        reason: 'Đã lấy đồ ra khỏi máy',
+        reason: 'Unloaded from the machine',
         detectedAt: -230,
         resolvedAt: -227,
       },
     ],
   },
   {
-    scenario: 'Hoàn tất nhưng trễ hẹn',
-    customer: ['Phạm Hải Đăng', '0901000024'],
+    scenario: 'Completed late',
+    customer: ['Samuel Mitchell', '0901000024'],
     service: 'WASH',
     createdAt: -360,
     pickupAt: -180,
@@ -643,15 +660,15 @@ const orders: OrderSpec[] = [
         type: 'LATE_RISK',
         severity: 'WARNING',
         status: 'RESOLVED',
-        reason: 'Dự kiến xong sau giờ hẹn trả khách',
+        reason: 'Expected to finish after the customer pickup time',
         detectedAt: -290,
         resolvedAt: -140,
       },
     ],
   },
   {
-    scenario: 'Hoàn tất hôm qua',
-    customer: ['Đinh Mỹ Linh', '0901000025'],
+    scenario: 'Completed yesterday',
+    customer: ['Grace Turner', '0901000025'],
     service: 'WASH_DRY',
     createdAt: -DAY - 300,
     pickupAt: -DAY - 60,
@@ -672,6 +689,246 @@ const orders: OrderSpec[] = [
     notifications: [{ status: 'SENT', at: -DAY - 160 }],
   },
 ]
+
+// On-time set (`--on-time`): every order covers a workflow state, but no stage is late or close
+// to late, every ETA is before its pickup, and nothing waits long enough to raise an alert.
+const onTimeOrders: OrderSpec[] = [
+  {
+    scenario: 'Just received, sorting',
+    customer: ['Oliver Parker', '0902000001'],
+    service: 'WASH_DRY',
+    createdAt: -2,
+    pickupAt: 240,
+    items: [{ type: 'shirt', quantity: 6, kg: 3 }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [
+          sorting(-2, 15),
+          planned('WASH', 20, 70, W6),
+          planned('DRY', 75, 120, D4),
+          planned('PACKING', 120, 135),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'One heavy item split into 2 batches',
+    customer: ['Chloe Evans', '0902000002'],
+    service: 'WASH_DRY',
+    createdAt: -3,
+    pickupAt: 300,
+    items: [{ type: 'blanket', quantity: 3, kg: 18, note: 'Large comforter' }],
+    batches: [
+      {
+        items: [[0, 10]],
+        stages: [
+          sorting(-3, 15),
+          planned('WASH', 40, 90, W2),
+          planned('DRY', 95, 150, D2),
+          planned('PACKING', 150, 165),
+        ],
+      },
+      {
+        items: [[0, 8]],
+        stages: [
+          sorting(-3, 15),
+          planned('WASH', 45, 90, W1),
+          planned('DRY', 95, 145, D1),
+          planned('PACKING', 145, 160),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Several items of one group merged into 1 batch',
+    customer: ['Ryan Collins', '0902000003'],
+    service: 'WASH',
+    createdAt: -4,
+    pickupAt: 240,
+    items: [
+      { type: 'shirt', quantity: 4, kg: 2 },
+      { type: 'white', quantity: 3, kg: 1.5, note: 'Whites' },
+    ],
+    batches: [
+      {
+        items: [
+          [0, 2],
+          [1, 1.5],
+        ],
+        stages: [sorting(-4, 20), planned('WASH', 30, 85, W3), planned('PACKING', 85, 100)],
+      },
+    ],
+  },
+  {
+    scenario: 'Sorted, waiting for its machine slot',
+    customer: ['Zoe Edwards', '0902000004'],
+    service: 'WASH_DRY',
+    createdAt: -20,
+    pickupAt: 260,
+    items: [{ type: 'towel', quantity: 10, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-20, -10),
+          planned('WASH', 25, 85, W5),
+          planned('DRY', 90, 150, D3),
+          planned('PACKING', 150, 165),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Dry-only service, dryer slot later',
+    customer: ['Nathan Stewart', '0902000005'],
+    service: 'DRY',
+    createdAt: -15,
+    pickupAt: 180,
+    items: [{ type: 'blanket', quantity: 1, kg: 3, note: 'Dry only' }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [sorted(-15, -5), planned('DRY', 30, 75, D4), planned('PACKING', 75, 90)],
+      },
+    ],
+  },
+  {
+    scenario: 'Washing',
+    customer: ['Lily Morris', '0902000006'],
+    service: 'WASH_DRY',
+    createdAt: -30,
+    pickupAt: 200,
+    items: [{ type: 'sport', quantity: 5, kg: 3.5 }],
+    batches: [
+      {
+        items: [[0, 3.5]],
+        stages: [
+          sorted(-30, -20),
+          running('WASH', W1, -10, 45),
+          planned('DRY', 40, 90, D1),
+          planned('PACKING', 90, 105),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Washed, just finished (unload now)',
+    customer: ['Dylan Rogers', '0902000007'],
+    service: 'WASH_DRY',
+    createdAt: -70,
+    pickupAt: 200,
+    items: [{ type: 'color', quantity: 9, kg: 4.5 }],
+    batches: [
+      {
+        items: [[0, 4.5]],
+        stages: [
+          sorted(-70, -60),
+          // Planned window includes unloading, so the alert scan does not flag it as late.
+          { ...waitingUnload('WASH', W2, -52, 50), end: 10 },
+          planned('DRY', 12, 67, D2),
+          planned('PACKING', 67, 82),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Drying',
+    customer: ['Hannah Reed', '0902000008'],
+    service: 'WASH_DRY',
+    createdAt: -110,
+    pickupAt: 150,
+    items: [{ type: 'dark', quantity: 10, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-110, -100),
+          unloaded('WASH', W5, -95, 60),
+          running('DRY', D3, -20, 60),
+          planned('PACKING', 40, 55),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Pickup tomorrow',
+    customer: ['Owen Cook', '0902000009'],
+    service: 'WASH_DRY',
+    createdAt: -10,
+    pickupAt: DAY + 120,
+    items: [{ type: 'black', quantity: 6, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-10, 0),
+          planned('WASH', 180, 230, W2),
+          planned('DRY', 235, 290, D2),
+          planned('PACKING', 290, 305),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Washed and dried, packing',
+    customer: ['Ella Morgan', '0902000010'],
+    service: 'WASH_DRY',
+    createdAt: -150,
+    pickupAt: 90,
+    items: [{ type: 'shirt', quantity: 8, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-150, -140),
+          unloaded('WASH', W3, -135, 55),
+          unloaded('DRY', D1, -75, 50),
+          planned('PACKING', -20, 25),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Ready, customer to be notified',
+    customer: ['Caleb Bell', '0902000011'],
+    service: 'WASH',
+    createdAt: -100,
+    pickupAt: 60,
+    items: [{ type: 'towel', quantity: 4, kg: 3 }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [sorted(-100, -90), unloaded('WASH', W6, -85, 45), packed(-25, -5)],
+      },
+    ],
+    readyAt: -5,
+  },
+  {
+    scenario: 'Completed on time',
+    customer: ['Aria Murphy', '0902000012'],
+    service: 'WASH_DRY',
+    createdAt: -300,
+    pickupAt: -30,
+    items: [{ type: 'light', quantity: 6, kg: 3.5 }],
+    batches: [
+      {
+        items: [[0, 3.5]],
+        stages: [
+          sorted(-300, -290),
+          unloaded('WASH', W1, -285, 45),
+          unloaded('DRY', D2, -235, 55),
+          packed(-175, -160),
+        ],
+      },
+    ],
+    readyAt: -160,
+    completedAt: -158,
+    notifications: [{ status: 'SENT', at: -158 }],
+  },
+]
+
+const scenarios = process.argv.includes('--on-time') ? onTimeOrders : orders
 
 // ---- writers ----------------------------------------------------------------------------------
 
@@ -838,7 +1095,7 @@ async function seedOrder(spec: OrderSpec, machineIds: Map<string, number>) {
         type: 'READY_FOR_PICKUP',
         channel: 'SMS',
         status: notification.status,
-        content: `Đơn #${order.orderId} của anh/chị ${spec.customer[0]} đã sẵn sàng, mời anh/chị đến lấy.`,
+        content: `Hi ${spec.customer[0]}, your order #${order.orderId} is ready for pickup.`,
         sentAt: notification.status === 'SENT' ? at(notification.at) : null,
         createdAt: at(notification.at),
       },
@@ -878,7 +1135,7 @@ async function main() {
 
   // A machine is BUSY while a stage runs on it or waits there to be unloaded.
   const occupied = new Set(
-    orders
+    scenarios
       .flatMap((order) => order.batches.flatMap((batch) => batch.stages))
       .filter((stage) => stage.status === 'IN_PROGRESS' || stage.status === 'MACHINE_FINISHED')
       .map((stage) => stage.machine),
@@ -899,7 +1156,7 @@ async function main() {
   }
 
   const created = []
-  for (const spec of orders) created.push({ ...(await seedOrder(spec, machineIds)), spec })
+  for (const spec of scenarios) created.push({ ...(await seedOrder(spec, machineIds)), spec })
 
   console.log(`Seeded ${machineSpecs.length} machines and ${created.length} orders:`)
   for (const { orderId, status, spec } of created)

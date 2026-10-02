@@ -60,23 +60,23 @@ function ActionButtonIcon({ actionType }: { actionType?: Task['actionType'] }) {
 
 // One short imperative line per row so staff see what to do next at a glance.
 function nextStep(task: Task) {
-  const machine = task.machineName ?? (task.stage === 'DRY' ? 'máy sấy' : 'máy giặt')
-  if (task.actionType === 'NOTIFY') return 'Gửi tin báo khách'
-  if (task.actionType === 'CLASSIFY') return 'Phân loại đồ'
-  if (task.actionType === 'PACK') return 'Xếp & đóng gói'
-  if (task.stageStatus === 'MACHINE_FINISHED') return `Lấy đồ ra · ${machine}`
+  const machine = task.machineName ?? (task.stage === 'DRY' ? 'dryer' : 'washer')
+  if (task.actionType === 'NOTIFY') return 'Notify customer'
+  if (task.actionType === 'CLASSIFY') return 'Sort laundry'
+  if (task.actionType === 'PACK') return 'Fold & pack'
+  if (task.stageStatus === 'MACHINE_FINISHED') return `Unload · ${machine}`
   if (task.stageStatus === 'IN_PROGRESS')
-    return `${task.stage === 'DRY' ? 'Đang sấy' : 'Đang giặt'} · ${machine}`
-  return `Cho vào ${task.stage === 'DRY' ? 'máy sấy' : 'máy giặt'}${
+    return `${task.stage === 'DRY' ? 'Drying' : 'Washing'} · ${machine}`
+  return `Load ${task.stage === 'DRY' ? 'dryer' : 'washer'}${
     task.machineName ? ` · ${task.machineName}` : ''
   }`
 }
 
 function buttonLabel(task: Task) {
-  if (task.actionType === 'NOTIFY') return 'Gửi tin'
-  if (task.stageStatus === 'IN_PROGRESS') return 'Máy xong'
-  if (task.stageStatus === 'MACHINE_FINISHED') return 'Đã lấy ra'
-  return 'Xong'
+  if (task.actionType === 'NOTIFY') return 'Notify'
+  if (task.stageStatus === 'IN_PROGRESS') return 'Machine done'
+  if (task.stageStatus === 'MACHINE_FINISHED') return 'Unloaded'
+  return 'Done'
 }
 
 // A bag can go into a machine once its planned start has come.
@@ -161,7 +161,7 @@ export function TaskCard({
           event.stopPropagation()
           onDragEnd()
         }}
-        title={canDrag ? 'Kéo túi vào máy' : undefined}
+        title={canDrag ? 'Drag the bag onto a machine' : undefined}
       >
         <TaskIcon task={task} />
       </div>
@@ -173,15 +173,15 @@ export function TaskCard({
         </div>
       </div>
       <div className="task-due">
-        <small>Giờ hẹn</small>
+        <small>Pickup</small>
         <strong>{task.due}</strong>
         {pickupOverdue > 0 ? (
           <span className="pickup-overdue-badge">
-            <AlertTriangle size={12} /> Trễ {formatMinutes(pickupOverdue)}
+            <AlertTriangle size={12} /> Overdue {formatMinutes(pickupOverdue)}
           </span>
         ) : etaLate > 0 ? (
           <span className="task-timing late order-late">
-            <AlertTriangle size={12} /> Có thể trễ {formatMinutes(etaLate)}
+            <AlertTriangle size={12} /> May be late {formatMinutes(etaLate)}
           </span>
         ) : null}
       </div>
@@ -192,9 +192,9 @@ export function TaskCard({
           </div>
         )}
         {canAcceptUnload ? (
-          <span className="drag-hint unload-hint">Thả túi vào đây</span>
+          <span className="drag-hint unload-hint">Drop the bag here</span>
         ) : canDrag ? (
-          <span className="drag-hint">Kéo túi vào máy →</span>
+          <span className="drag-hint">Drag bag to machine →</span>
         ) : task.button ? (
           <button
             className="done"
@@ -284,10 +284,10 @@ export function MachinePane({
   const dryers = machines.filter((machine) => machine.type === 'DRYER')
   const machineState = (status: string) =>
     ({
-      AVAILABLE: 'Trống',
-      BUSY: 'Đang chạy',
-      MAINTENANCE: 'Bảo trì',
-    })[status] ?? 'Không rõ'
+      AVAILABLE: 'Idle',
+      BUSY: 'Running',
+      MAINTENANCE: 'Maintenance',
+    })[status] ?? 'Unknown'
   const renderMachine = (machine: (typeof machines)[number]) => {
     const validDrop = canDrop(machine.name)
     // Running: counts down (or overdue). Finished: stops spinning and shows the bag to drag back.
@@ -327,10 +327,10 @@ export function MachinePane({
           : { width: `${widthPercent}%`, flexBasis: `${widthPercent}%` }
       }
     >
-      <MachineGroup title="MÁY GIẶT" count={`${washers.length} MÁY`}>
+      <MachineGroup title="WASHERS" count={`${washers.length} MACHINES`}>
         {washers.map(renderMachine)}
       </MachineGroup>
-      <MachineGroup title="MÁY SẤY" count={`${dryers.length} MÁY`}>
+      <MachineGroup title="DRYERS" count={`${dryers.length} MACHINES`}>
         {dryers.map(renderMachine)}
       </MachineGroup>
     </aside>
@@ -403,7 +403,7 @@ function Machine({
           <div
             className="machine-bag"
             draggable
-            title="Kéo túi về đơn hàng"
+            title="Drag the bag back to its order"
             onDragStart={(event) => {
               event.stopPropagation()
               event.dataTransfer.effectAllowed = 'move'

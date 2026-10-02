@@ -884,7 +884,7 @@ button.done {
   font-size: 12px;
   line-height: 15px;
 }
-/* Long labels ("Trễ công đoạn 1 giờ 5 phút", customer names) must stay inside the tile. */
+/* Long labels ("Stage late 1 h 5 min", customer names) must stay inside the tile. */
 .machine {
   min-width: 0;
   padding: 10px 8px;

@@ -147,7 +147,7 @@ export async function updateStage(
 }
 
 // Moves a running machine stage to MACHINE_FINISHED. The update only applies while the stage
-// is still IN_PROGRESS, so a manual "Máy xong" and the automatic check never both apply it.
+// is still IN_PROGRESS, so a manual "Machine done" and the automatic check never both apply it.
 async function finishMachineStage(
   stageId: number,
   batchId: number,

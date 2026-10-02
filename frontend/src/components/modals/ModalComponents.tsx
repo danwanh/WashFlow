@@ -30,22 +30,22 @@ import type { Task } from '../../types/task'
 import { formatClock, liveTiming, statusClass } from '../../utils/timing'
 
 const friendlyBatchStatus: Record<string, string> = {
-  WAITING: 'Đang chờ xử lý',
-  WASHING: 'Đang giặt',
-  DRYING: 'Đang sấy',
-  WAITING_FOR_UNLOAD: 'Chờ dỡ đồ',
-  COMPLETED: 'Đã hoàn tất',
+  WAITING: 'Waiting',
+  WASHING: 'Washing',
+  DRYING: 'Drying',
+  WAITING_FOR_UNLOAD: 'Waiting to unload',
+  COMPLETED: 'Completed',
 }
 const serviceLabel: Record<string, string> = {
-  WASH: 'Giặt',
-  DRY: 'Sấy',
-  WASH_DRY: 'Giặt và sấy',
+  WASH: 'Wash',
+  DRY: 'Dry',
+  WASH_DRY: 'Wash & dry',
 }
 const stageLabels: Record<string, string> = {
-  CLASSIFY: 'Phân loại',
-  WASH: 'Giặt',
-  DRY: 'Sấy',
-  PACKING: 'Đóng gói',
+  CLASSIFY: 'Sorting',
+  WASH: 'Wash',
+  DRY: 'Dry',
+  PACKING: 'Packing',
 }
 const stageOrder = ['CLASSIFY', 'WASH', 'DRY', 'PACKING']
 const sortStages = <T extends { stage: string }>(stages: T[]) =>
@@ -65,11 +65,11 @@ export type DetailAction =
   | { kind: 'notify'; orderId: number }
 
 const stageActionLabel = (stage: OrderStage) => {
-  if (stage.status === 'MACHINE_FINISHED') return 'Đã lấy đồ ra'
-  if (stage.status === 'IN_PROGRESS') return 'Máy đã chạy xong'
-  if (stage.stage === 'CLASSIFY') return 'Xong phân loại'
-  if (stage.stage === 'PACKING') return 'Xong đóng gói'
-  return `Cho vào ${stage.machine_name ?? (stage.stage === 'WASH' ? 'máy giặt' : 'máy sấy')}`
+  if (stage.status === 'MACHINE_FINISHED') return 'Unloaded'
+  if (stage.status === 'IN_PROGRESS') return 'Machine finished'
+  if (stage.stage === 'CLASSIFY') return 'Finish sorting'
+  if (stage.stage === 'PACKING') return 'Finish packing'
+  return `Load ${stage.machine_name ?? (stage.stage === 'WASH' ? 'washer' : 'dryer')}`
 }
 const stageEndpoint = (stage: OrderStage): 'start' | 'machine-finished' | 'unload' =>
   stage.status === 'MACHINE_FINISHED'
@@ -148,13 +148,13 @@ export function DetailModal({
     void getOrder(task.orderId)
       .then(setOrder)
       .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Không thể tải chi tiết đơn'),
+        setError(cause instanceof Error ? cause.message : 'Could not load order details'),
       )
   }, [task.orderId])
   const formatTime = (value: string) =>
-    new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const formatDateTime = (value: string) =>
-    new Date(value).toLocaleString('vi-VN', {
+    new Date(value).toLocaleString('en-GB', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -180,7 +180,7 @@ export function DetailModal({
       const earliest = requestError.details?.earliest_feasible_pickup
       setError(
         earliest
-          ? `${requestError.message}. Giờ sớm nhất có thể: ${formatDateTime(earliest)}.`
+          ? `${requestError.message}. Earliest possible time: ${formatDateTime(earliest)}.`
           : requestError.message,
       )
     } finally {
@@ -200,15 +200,15 @@ export function DetailModal({
           if (!preview.feasible) {
             setError(
               preview.unscheduled_stage_ids.length
-                ? 'Không thể đổi giờ vì chưa có máy phù hợp cho một số công đoạn.'
+                ? 'Cannot change the time: some stages have no suitable machine.'
                 : preview.earliest_feasible_pickup
-                  ? `Giờ hẹn mới không khả thi. Giờ sớm nhất có thể: ${formatDateTime(preview.earliest_feasible_pickup)}.`
-                  : 'Giờ hẹn mới không khả thi với lịch xử lý hiện tại.',
+                  ? `The new pickup time is not feasible. Earliest possible time: ${formatDateTime(preview.earliest_feasible_pickup)}.`
+                  : 'The new pickup time is not feasible with the current schedule.',
             )
           }
         })
         .catch((cause) =>
-          setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra lịch'),
+          setError(cause instanceof Error ? cause.message : 'Could not check the schedule'),
         )
         .finally(() => setPreviewLoading(false))
     }, 300)
@@ -231,10 +231,10 @@ export function DetailModal({
   const action: { label: string; value: DetailAction } | null = !order
     ? null
     : order.status === 'READY' && task.orderId
-      ? { label: 'Gửi tin khách', value: { kind: 'notify', orderId: task.orderId } }
+      ? { label: 'Notify customer', value: { kind: 'notify', orderId: task.orderId } }
       : targetStage
         ? {
-            label: `Mẻ ${targetStage.batch.batch_no} · ${stageActionLabel(targetStage.stage)}`,
+            label: `Batch ${targetStage.batch.batch_no} · ${stageActionLabel(targetStage.stage)}`,
             value: {
               kind: 'stage',
               batchId: targetStage.batch.batch_id,
@@ -251,22 +251,22 @@ export function DetailModal({
     try {
       await onAction(action.value)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể thực hiện thao tác')
+      setError(cause instanceof Error ? cause.message : 'Could not perform the action')
     } finally {
       setActing(false)
     }
   }
   const statusText =
     {
-      RECEIVED: 'Mới tiếp nhận',
-      WAITING: 'Đang xử lý',
-      FOLDING_PACKING: 'Đang đóng gói',
-      READY: 'Sẵn sàng lấy',
-      COMPLETED: 'Đã hoàn tất',
-    }[order?.status ?? ''] ?? 'Đang tải'
+      RECEIVED: 'Received',
+      WAITING: 'Processing',
+      FOLDING_PACKING: 'Packing',
+      READY: 'Ready for pickup',
+      COMPLETED: 'Completed',
+    }[order?.status ?? ''] ?? 'Loading'
   return (
     <ModalFrame
-      title={`Đơn #${task.id} · ${order?.customer.name ?? task.customer}`}
+      title={`Order #${task.id} · ${order?.customer.name ?? task.customer}`}
       onClose={onClose}
       className="compact-detail-modal"
     >
@@ -274,19 +274,19 @@ export function DetailModal({
         <div className={`compact-summary ${editingPickup ? 'editing' : ''}`}>
           <div>
             <small>{statusText.toUpperCase()}</small>
-            <b>{order ? `${order.batches.length} mẻ xử lý độc lập` : 'Đang tải chi tiết...'}</b>
+            <b>{order ? `${order.batches.length} independent batches` : 'Loading details...'}</b>
             <span>
               {order
-                ? `${serviceLabel[order.service_type] ?? 'Xử lý'} · ${order.total_weight_kg.toFixed(1)}kg`
+                ? `${serviceLabel[order.service_type] ?? 'Service'} · ${order.total_weight_kg.toFixed(1)}kg`
                 : ''}
             </span>
           </div>
           <div className="compact-deadline">
-            <small>HẠN GIAO</small>
+            <small>PICKUP</small>
             <span>
               {order && new Date(order.estimated_at) > new Date(order.pickup_at)
-                ? 'Có nguy cơ trễ'
-                : 'Đúng hẹn'}
+                ? 'At risk of being late'
+                : 'On time'}
             </span>
             {editingPickup ? (
               <div className="pickup-editor">
@@ -305,7 +305,7 @@ export function DetailModal({
                       setError('')
                     }}
                   >
-                    Chọn giờ sớm nhất · {formatDateTime(pickupPreview.earliest_feasible_pickup)}
+                    Use earliest time · {formatDateTime(pickupPreview.earliest_feasible_pickup)}
                   </button>
                 )}
                 <div className="pickup-edit-actions">
@@ -314,7 +314,7 @@ export function DetailModal({
                     disabled={savingPickup || previewLoading || !pickupPreview?.feasible}
                     onClick={() => void savePickupTime()}
                   >
-                    {savingPickup ? 'Đang kiểm tra...' : 'Lưu giờ mới'}
+                    {savingPickup ? 'Checking...' : 'Save new time'}
                   </button>
                   <button
                     className="pickup-cancel-button"
@@ -324,17 +324,17 @@ export function DetailModal({
                       setError('')
                     }}
                   >
-                    Hủy
+                    Cancel
                   </button>
                 </div>
                 {previewLoading && (
                   <small className="pickup-preview-status">
-                    Đang kiểm tra các đơn bị ảnh hưởng...
+                    Checking affected orders...
                   </small>
                 )}
                 {pickupPreview && (
                   <div className="pickup-affected-orders">
-                    <b>Đơn bị ảnh hưởng</b>
+                    <b>Affected orders</b>
                     {pickupPreview.affected_orders.length ? (
                       pickupPreview.affected_orders.map((affected) => (
                         <div
@@ -345,26 +345,26 @@ export function DetailModal({
                             <span>
                               #{affected.order_id} · {affected.customer}
                             </span>
-                            {affected.relation === 'changing' && <em>Đang đổi giờ</em>}
-                            {affected.relation === 'rescheduled' && <em>Bị đổi lịch</em>}
+                            {affected.relation === 'changing' && <em>Changing time</em>}
+                            {affected.relation === 'rescheduled' && <em>Rescheduled</em>}
                           </div>
                           <small className="pickup-affected-order-time">
-                            Hẹn {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'}{' '}
-                            · Dự kiến xong {formatDateTime(affected.estimated_at)}
+                            Pickup {affected.pickup_at ? formatDateTime(affected.pickup_at) : '--:--'}{' '}
+                            · Expected done {formatDateTime(affected.estimated_at)}
                           </small>
                           <small
                             className={`pickup-affected-order-status ${affected.late && !affected.preexisting_late ? 'late' : ''}`}
                           >
                             {affected.preexisting_late
-                              ? 'Đã trễ trước khi đổi giờ'
+                              ? 'Already late before the change'
                               : affected.late
-                                ? 'Có nguy cơ trễ'
-                                : 'Đúng hẹn'}
+                                ? 'At risk of being late'
+                                : 'On time'}
                           </small>
                         </div>
                       ))
                     ) : (
-                      <small>Không có đơn khác bị ảnh hưởng.</small>
+                      <small>No other orders are affected.</small>
                     )}
                   </div>
                 )}
@@ -382,7 +382,7 @@ export function DetailModal({
                   setEditingPickup(true)
                 }}
               >
-                <Clock3 size={13} /> Đổi giờ hẹn
+                <Clock3 size={13} /> Change pickup time
               </button>
             )}
           </div>
@@ -397,18 +397,18 @@ export function DetailModal({
                 const item = order.items.find(
                   (candidate) => candidate.order_item_id === allocation.order_item_id,
                 )
-                return item ? `${item.item_type} · ${item.quantity} món` : ''
+                return item ? `${item.item_type} · ${item.quantity} pcs` : ''
               })
               .filter(Boolean)
               .join(', ')
             const current = active
               ? `${stageLabels[active.stage] ?? active.stage}${active.machine_name ? ` · ${active.machine_name}` : ''}`
-              : 'Đã hoàn tất'
+              : 'Completed'
             return (
               <Progress
                 key={batch.batch_id}
-                title={`Mẻ ${batch.batch_no} · ${batch.weight_kg.toFixed(1)}kg`}
-                status={`${allocatedItems ? `${allocatedItems} · ` : ''}${friendlyBatchStatus[batch.status] ?? 'Đang xử lý'} · ${current}`}
+                title={`Batch ${batch.batch_no} · ${batch.weight_kg.toFixed(1)}kg`}
+                status={`${allocatedItems ? `${allocatedItems} · ` : ''}${friendlyBatchStatus[batch.status] ?? 'Processing'} · ${current}`}
                 tone={active?.stage === 'DRY' ? 'amber' : 'blue'}
                 stages={stages}
                 activeId={active?.batch_stage_id ?? null}
@@ -420,20 +420,20 @@ export function DetailModal({
         <div className="compact-next">
           <CircleHelp size={16} />
           <span>
-            <b>Tiếp theo</b> ·{' '}
+            <b>Next</b> ·{' '}
             {order?.status === 'READY'
-              ? 'Kiểm tra nội dung rồi gửi tin khách.'
-              : 'Hoàn tất các mẻ còn lại theo thứ tự ưu tiên.'}
+              ? 'Review the message, then notify the customer.'
+              : 'Finish the remaining batches in priority order.'}
           </span>
         </div>
       </div>
       <footer>
         <button className="secondary" onClick={onClose}>
-          Đóng
+          Close
         </button>
         {action && onAction && (
           <button className="primary" disabled={acting} onClick={() => void runAction()}>
-            {acting ? 'Đang cập nhật...' : action.label} <ChevronRight size={14} />
+            {acting ? 'Updating...' : action.label} <ChevronRight size={14} />
           </button>
         )}
       </footer>
@@ -498,7 +498,7 @@ function Progress({
               <small>{stageLabels[stage.stage] ?? stage.stage}</small>
               <em>
                 {done
-                  ? `Xong ${formatClock(stage.actual_ended_at)}`
+                  ? `Done ${formatClock(stage.actual_ended_at)}`
                   : `${stage.machine_name ? `${stage.machine_name} · ` : ''}${formatClock(stage.planned_start_at)}–${formatClock(stage.planned_end_at)}`}
               </em>
               {timing && <span>{timing.label}</span>}
@@ -533,7 +533,7 @@ export function ConfirmActionModal({
       </div>
       <footer>
         <button className="secondary" onClick={onClose}>
-          Hủy
+          Cancel
         </button>
         <button className="primary" onClick={onConfirm}>
           {action}
@@ -560,37 +560,37 @@ export function NotificationModal({
   useEffect(() => {
     void draftReadyNotification(orderId)
       .then((draft) => setContent(draft.content))
-      .catch((cause) => setError(cause instanceof Error ? cause.message : 'Không thể tạo tin nhắn'))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not create the message'))
       .finally(() => setLoading(false))
   }, [orderId])
   return (
-    <ModalFrame title="Gửi tin khách hàng" onClose={onClose}>
+    <ModalFrame title="Notify customer" onClose={onClose}>
       <div className="scenario-body notify">
         <h3>
-          Đơn #{orderId} · {customer}
+          Order #{orderId} · {customer}
         </h3>
         <div className="scenario-result">
           <MessageCircle size={18} />
-          <span>Kiểm tra nội dung trước khi gửi thông báo hoàn tất.</span>
+          <span>Review the message before sending the completion notice.</span>
         </div>
         <textarea
           value={content}
           onChange={(event) => setContent(event.target.value)}
           disabled={loading}
-          aria-label="Nội dung thông báo"
+          aria-label="Message content"
         />
         {error && <p className="queue-error">{error}</p>}
       </div>
       <footer>
         <button className="secondary" onClick={onClose}>
-          Hủy
+          Cancel
         </button>
         <button
           className="primary"
           disabled={loading || !content.trim() || Boolean(error)}
           onClick={() => onSend(content.trim())}
         >
-          Gửi tin khách
+          Notify customer
         </button>
       </footer>
     </ModalFrame>
@@ -599,23 +599,23 @@ export function NotificationModal({
 
 type Item = { id: number; itemType: string; quantity: string; weight: string; note: string }
 const quickItemTypes = [
-  'Đồ trắng',
-  'Đồ màu',
-  'Khăn / đồ nặng',
-  'Đồ thể thao',
-  'Đồ mỏng / dễ hỏng',
-  'Đồ đặc biệt',
+  'Whites',
+  'Colors',
+  'Towels / heavy',
+  'Sportswear',
+  'Delicate',
+  'Special',
 ]
 const groupNames: Record<string, string> = {
-  WHITE_NORMAL: 'Đồ trắng thông thường',
-  LIGHT_NORMAL: 'Đồ sáng màu',
-  DARK_NORMAL: 'Đồ màu sẫm',
-  BLACK_NORMAL: 'Đồ đen',
-  TOWEL_HEAVY: 'Khăn và đồ nặng',
-  JEANS_HEAVY: 'Quần jeans và đồ dày',
-  SPORT: 'Đồ thể thao',
-  DELICATE: 'Đồ mỏng, dễ hỏng',
-  SPECIAL: 'Đồ cần xử lý riêng',
+  WHITE_NORMAL: 'Regular whites',
+  LIGHT_NORMAL: 'Light colors',
+  DARK_NORMAL: 'Dark colors',
+  BLACK_NORMAL: 'Blacks',
+  TOWEL_HEAVY: 'Towels & heavy items',
+  JEANS_HEAVY: 'Jeans & thick items',
+  SPORT: 'Sportswear',
+  DELICATE: 'Delicates',
+  SPECIAL: 'Special care',
 }
 
 export function CreateOrderModal({
@@ -638,7 +638,7 @@ export function CreateOrderModal({
   const [note, setNote] = useState('')
   const [totalAmount, setTotalAmount] = useState('')
   const [items, setItems] = useState<Item[]>([
-    { id: 1, itemType: 'Đồ trắng', quantity: '1', weight: '1.5', note: '' },
+    { id: 1, itemType: 'Whites', quantity: '1', weight: '1.5', note: '' },
   ])
   const [plan, setPlan] = useState<PlanResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -646,7 +646,7 @@ export function CreateOrderModal({
   const totalWeight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0)
   const totalItems = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   const estimated = plan?.estimated_at
-    ? new Date(plan.estimated_at).toLocaleTimeString('vi-VN', {
+    ? new Date(plan.estimated_at).toLocaleTimeString('en-GB', {
         hour: '2-digit',
         minute: '2-digit',
       })
@@ -655,7 +655,7 @@ export function CreateOrderModal({
   const ownLate = plan?.warnings.includes('PICKUP_TOO_EARLY')
   const delayedOrders = plan?.affected_orders ?? []
   const earliestPickup = plan?.earliest_feasible_pickup
-    ? new Date(plan.earliest_feasible_pickup).toLocaleString('vi-VN', {
+    ? new Date(plan.earliest_feasible_pickup).toLocaleString('en-GB', {
         hour: '2-digit',
         minute: '2-digit',
         day: '2-digit',
@@ -670,12 +670,12 @@ export function CreateOrderModal({
   }
   const itemCode = (value: string) =>
     ({
-      'Đồ trắng': 'white',
-      'Đồ màu': 'color',
-      'Khăn / đồ nặng': 'towel',
-      'Đồ thể thao': 'sport',
-      'Đồ mỏng / dễ hỏng': 'delicate',
-      'Đồ đặc biệt': 'special',
+      'Whites': 'white',
+      'Colors': 'color',
+      'Towels / heavy': 'towel',
+      'Sportswear': 'sport',
+      'Delicate': 'delicate',
+      'Special': 'special',
     })[value] ?? value
   const preview = async () => {
     setLoading(true)
@@ -699,7 +699,7 @@ export function CreateOrderModal({
       )
       setStep('plan')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể lập kế hoạch thử')
+      setError(cause instanceof Error ? cause.message : 'Could not create a trial plan')
     } finally {
       setLoading(false)
     }
@@ -711,7 +711,7 @@ export function CreateOrderModal({
     try {
       onCreate(await createOrder(plan.plan_id))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể tạo đơn hàng')
+      setError(cause instanceof Error ? cause.message : 'Could not create the order')
     } finally {
       setLoading(false)
     }
@@ -728,12 +728,12 @@ export function CreateOrderModal({
   const description = (index: number) => {
     const item = items[index]
     return item
-      ? `${item.itemType || 'Loại đồ chưa xác định'} · ${item.quantity} món · ${Number(item.weight || 0).toFixed(1)} kg`
-      : 'Loại đồ chưa xác định'
+      ? `${item.itemType || 'Unspecified item type'} · ${item.quantity} pcs · ${Number(item.weight || 0).toFixed(1)} kg`
+      : 'Unspecified item type'
   }
   return (
     <ModalFrame
-      title={step === 'details' ? 'Tạo đơn hàng mới' : 'Xác nhận đơn hàng'}
+      title={step === 'details' ? 'New order' : 'Confirm order'}
       onClose={onClose}
       className="create-modal-v1 create-order-spec-modal"
       icon={<Plus size={18} />}
@@ -741,26 +741,26 @@ export function CreateOrderModal({
       <div className="modal-body create-order-body">
         <div className="spec-stepper">
           <span className={step === 'details' ? 'active' : 'done'}>
-            <b>{step === 'details' ? '1' : '✓'}</b> Thông tin đơn
+            <b>{step === 'details' ? '1' : '✓'}</b> Order details
           </span>
           <i className={step === 'plan' ? 'done' : ''} />
           <span className={step === 'plan' ? 'active' : ''}>
-            <b>2</b> Lịch xử lý
+            <b>2</b> Schedule
           </span>
         </div>
         {step === 'details' ? (
           <>
             <div className="create-fields">
               <label>
-                Tên khách hàng *
+                Customer name *
                 <input
                   value={customer}
                   onChange={(e) => setCustomer(e.target.value)}
-                  placeholder="Nhập tên khách hàng"
+                  placeholder="Enter customer name"
                 />
               </label>
               <label>
-                Số điện thoại
+                Phone number
                 <input
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -770,15 +770,15 @@ export function CreateOrderModal({
             </div>
             <div className="create-fields">
               <label>
-                Dịch vụ *
+                Service *
                 <select value={service} onChange={(e) => setService(e.target.value as ServiceType)}>
-                  <option value="WASH">Giặt</option>
-                  <option value="DRY">Sấy</option>
-                  <option value="WASH_DRY">Giặt + Sấy</option>
+                  <option value="WASH">Wash</option>
+                  <option value="DRY">Dry</option>
+                  <option value="WASH_DRY">Wash + Dry</option>
                 </select>
               </label>
               <label>
-                Ngày nhận đồ *
+                Pickup date *
                 <input
                   className="date-input"
                   type="date"
@@ -788,7 +788,7 @@ export function CreateOrderModal({
                 />
               </label>
               <label>
-                Giờ hẹn nhận đồ *
+                Pickup time *
                 <input
                   className="time-input"
                   type="time"
@@ -797,22 +797,22 @@ export function CreateOrderModal({
                 />
               </label>
               <label>
-                Tổng tiền
+                Total price
                 <input
                   type="number"
                   min="0"
                   step="1000"
                   value={totalAmount}
                   onChange={(e) => setTotalAmount(e.target.value)}
-                  placeholder="Tự tính theo kg"
+                  placeholder="Auto-calculated by kg"
                 />
               </label>
             </div>
             <div className="field-block">
               <div className="field-heading">
-                <label>Danh sách đồ *</label>
+                <label>Items *</label>
                 <span>
-                  {totalItems} món · {totalWeight.toFixed(1)} kg
+                  {totalItems} pcs · {totalWeight.toFixed(1)} kg
                 </span>
               </div>
               <div className="item-chips spec-quick-items">
@@ -827,13 +827,13 @@ export function CreateOrderModal({
                   <div className="order-item-row" key={item.id}>
                     <strong>{index + 1}</strong>
                     <input
-                      aria-label="Loại đồ"
+                      aria-label="Item type"
                       value={item.itemType}
                       onChange={(e) => update(item.id, 'itemType', e.target.value)}
-                      placeholder="Loại đồ"
+                      placeholder="Item type"
                     />
                     <input
-                      aria-label="Số lượng"
+                      aria-label="Quantity"
                       type="number"
                       min="1"
                       value={item.quantity}
@@ -841,7 +841,7 @@ export function CreateOrderModal({
                       placeholder="SL"
                     />
                     <input
-                      aria-label="Khối lượng"
+                      aria-label="Weight"
                       type="number"
                       min="0"
                       step="0.1"
@@ -850,10 +850,10 @@ export function CreateOrderModal({
                       placeholder="Kg"
                     />
                     <input
-                      aria-label="Ghi chú món đồ"
+                      aria-label="Item note"
                       value={item.note}
                       onChange={(e) => update(item.id, 'note', e.target.value)}
-                      placeholder="Ghi chú"
+                      placeholder="Note"
                     />
                     <button
                       className="remove-item"
@@ -861,7 +861,7 @@ export function CreateOrderModal({
                       onClick={() =>
                         setItems((current) => current.filter((entry) => entry.id !== item.id))
                       }
-                      aria-label="Xóa món đồ"
+                      aria-label="Remove item"
                     >
                       <X size={15} />
                     </button>
@@ -869,15 +869,15 @@ export function CreateOrderModal({
                 ))}
               </div>
               <button className="add-item-button" type="button" onClick={() => addItem()}>
-                + Thêm loại đồ
+                + Add item type
               </button>
             </div>
             <label className="special-note">
-              Ghi chú đặc biệt
+              Special instructions
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Ví dụ: không dùng nước xả, cần xử lý riêng..."
+                placeholder="E.g. no fabric softener, handle separately..."
               />
             </label>
             {error && <div className="form-error">{error}</div>}
@@ -886,46 +886,46 @@ export function CreateOrderModal({
           <>
             <div className="plan-summary">
               <div>
-                <small>KHÁCH HÀNG</small>
-                <b>{customer || 'Chưa nhập tên'}</b>
-                <span>{phone || 'Chưa có số điện thoại'}</span>
+                <small>CUSTOMER</small>
+                <b>{customer || 'No name entered'}</b>
+                <span>{phone || 'No phone number'}</span>
               </div>
               <div>
-                <small>DỊCH VỤ</small>
-                <b>{service === 'WASH' ? 'Giặt' : service === 'DRY' ? 'Sấy' : 'Giặt + Sấy'}</b>
-                <span>Hẹn nhận lúc {pickupAt}</span>
+                <small>SERVICE</small>
+                <b>{service === 'WASH' ? 'Wash' : service === 'DRY' ? 'Dry' : 'Wash + Dry'}</b>
+                <span>Pickup at {pickupAt}</span>
               </div>
             </div>
             <div className="plan-section">
               <div className="plan-section-heading">
-                <b>1. Nhóm tương thích</b>
-                <em>{plan?.compatibility_groups.length ?? 0} nhóm</em>
+                <b>1. Compatibility groups</b>
+                <em>{plan?.compatibility_groups.length ?? 0} groups</em>
               </div>
               {plan?.compatibility_groups.map((group, index) => (
                 <div className="plan-group" key={group.group}>
                   <span className={`group-dot ${index % 2 ? 'amber-dot' : 'blue-dot'}`} />
                   <div>
                     <b>
-                      Nhóm {index + 1} · {groupNames[group.group] ?? group.group}
+                      Group {index + 1} · {groupNames[group.group] ?? group.group}
                     </b>
                     <small>{group.itemIndices.map(description).join(' | ')}</small>
                   </div>
                   <strong>
-                    {plan.batches.filter((batch) => batch.group === group.group).length} mẻ
+                    {plan.batches.filter((batch) => batch.group === group.group).length} batches
                   </strong>
                 </div>
               ))}
             </div>
             <div className="plan-section">
               <div className="plan-section-heading">
-                <b>2. Lịch xử lý theo từng mẻ</b>
+                <b>2. Schedule per batch</b>
               </div>
               {plan?.batches.map((batch) => (
                 <div className="batch-schedule" key={batch.batchNo}>
                   <div className="batch-schedule-heading">
                     <div>
                       <b>
-                        Mẻ {batch.batchNo} · {groupNames[batch.group] ?? batch.group}
+                        Batch {batch.batchNo} · {groupNames[batch.group] ?? batch.group}
                       </b>
                       <small>
                         {batch.items.map((item) => description(item.itemIndex)).join(' | ')}
@@ -942,16 +942,16 @@ export function CreateOrderModal({
                         <i>{stageLabels[stage.stage] ?? stage.stage}</i>
                         <b>
                           {stage.machineId === null
-                            ? 'Thủ công'
-                            : `${stage.stage === 'WASH' ? 'Máy giặt' : 'Máy sấy'} #${stage.machineId}`}
+                            ? 'Manual'
+                            : `${stage.stage === 'WASH' ? 'Washer' : 'Dryer'} #${stage.machineId}`}
                         </b>
                         <span>
-                          {new Date(stage.plannedStartAt).toLocaleTimeString('vi-VN', {
+                          {new Date(stage.plannedStartAt).toLocaleTimeString('en-GB', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}{' '}
                           -{' '}
-                          {new Date(stage.plannedEndAt).toLocaleTimeString('vi-VN', {
+                          {new Date(stage.plannedEndAt).toLocaleTimeString('en-GB', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}
@@ -971,25 +971,25 @@ export function CreateOrderModal({
               <div>
                 <b>
                   {noFeasibleMachine
-                    ? 'Không thể lập lịch · Không có máy phù hợp'
+                    ? 'Cannot schedule · No suitable machine'
                     : plan?.feasible
-                      ? `Khả thi · Dự kiến xong ${estimated} · Đúng giờ hẹn`
+                      ? `Feasible · Expected done ${estimated} · On time`
                       : ownLate
-                        ? `Không khả thi · Dự kiến xong ${estimated} sau giờ hẹn`
-                        : `Không khả thi · Làm trễ ${delayedOrders.length} đơn đang đúng hẹn`}
+                        ? `Not feasible · Expected done ${estimated}, after pickup time`
+                        : `Not feasible · Would make ${delayedOrders.length} on-time orders late`}
                 </b>
                 <small>
                   {noFeasibleMachine
-                    ? 'Lý do: Không có máy operational đủ công suất cho công đoạn yêu cầu.'
+                    ? 'Reason: No operational machine has enough capacity for the required stage.'
                     : plan?.feasible
-                      ? 'Lý do: Máy hiện có đủ thời gian để hoàn tất trước giờ hẹn.'
+                      ? 'Reason: The machines have enough time to finish before the pickup time.'
                       : ownLate
-                        ? 'Lý do: Thời gian xử lý dự kiến vượt quá giờ hẹn của khách.'
-                        : `Lý do: Ưu tiên đơn này sẽ đẩy ${delayedOrders
+                        ? 'Reason: The expected processing time runs past the customer pickup time.'
+                        : `Reason: Prioritizing this order would make ${delayedOrders
                             .map((order) => `#${order.order_id} ${order.customer}`)
-                            .join(', ')} trễ hẹn.`}
+                            .join(', ')} late.`}
                   {!plan?.feasible && earliestPickup && (
-                    <> Giờ hẹn sớm nhất có thể: {earliestPickup}.</>
+                    <> Earliest possible pickup: {earliestPickup}.</>
                   )}
                 </small>
               </div>
@@ -1000,7 +1000,7 @@ export function CreateOrderModal({
       </div>
       <footer>
         <button className="secondary" onClick={onClose}>
-          Hủy
+          Cancel
         </button>
         {step === 'plan' && (
           <button
@@ -1010,7 +1010,7 @@ export function CreateOrderModal({
               setStep('details')
             }}
           >
-            ← Sửa thông tin
+            ← Edit details
           </button>
         )}
         {step === 'details' ? (
@@ -1025,11 +1025,11 @@ export function CreateOrderModal({
             }
             onClick={preview}
           >
-            {loading ? 'Đang tính lịch xử lý...' : 'Xem lịch xử lý'} <ChevronRight size={15} />
+            {loading ? 'Calculating schedule...' : 'View schedule'} <ChevronRight size={15} />
           </button>
         ) : (
           <button className="primary" disabled={loading || !plan?.feasible} onClick={confirm}>
-            {loading ? 'Đang tạo đơn...' : 'Xác nhận và tạo đơn'} <Check size={15} />
+            {loading ? 'Creating order...' : 'Confirm and create order'} <Check size={15} />
           </button>
         )}
       </footer>
@@ -1038,13 +1038,13 @@ export function CreateOrderModal({
 }
 
 const stageName: Record<MaintenanceStage['stage'], string> = {
-  CLASSIFY: 'Phân loại',
-  WASH: 'Giặt',
-  DRY: 'Sấy',
-  PACKING: 'Đóng gói',
+  CLASSIFY: 'Sorting',
+  WASH: 'Wash',
+  DRY: 'Dry',
+  PACKING: 'Packing',
 }
 const clockTime = (value: string) =>
-  new Date(value).toLocaleString('vi-VN', {
+  new Date(value).toLocaleString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     day: '2-digit',
@@ -1068,8 +1068,8 @@ export function MaintenanceConfirmModal({
 }) {
   const nextMachine = (stage: MaintenanceStage) =>
     stage.new_machine_name
-      ? `→ ${stage.new_machine_name}${stage.new_planned_start_at ? ` lúc ${clockTime(stage.new_planned_start_at)}` : ''}`
-      : '→ Chưa có máy phù hợp'
+      ? `→ ${stage.new_machine_name}${stage.new_planned_start_at ? ` at ${clockTime(stage.new_planned_start_at)}` : ''}`
+      : '→ No suitable machine yet'
   const stageLabel = (stage: MaintenanceStage) =>
     `#${stage.order_id} · ${stage.customer} · ${stageName[stage.stage]}`
   const nothing =
@@ -1079,7 +1079,7 @@ export function MaintenanceConfirmModal({
     !impact.late_orders.length
   return (
     <ModalFrame
-      title={`Chuyển ${machineName} sang bảo trì`}
+      title={`Put ${machineName} into maintenance`}
       onClose={onClose}
       icon={<Wrench size={18} />}
     >
@@ -1087,22 +1087,22 @@ export function MaintenanceConfirmModal({
         {nothing && (
           <div className="scenario-result">
             <CheckCircle2 size={18} />
-            <span>Không có mẻ hay đơn nào bị ảnh hưởng.</span>
+            <span>No batches or orders are affected.</span>
           </div>
         )}
         {impact.stopped && (
           <div className="pickup-affected-orders maintenance-stopped">
-            <b>Mẻ đang chạy sẽ bị dừng</b>
+            <b>The running batch will be stopped</b>
             <div>
               <span>{stageLabel(impact.stopped)}</span>
-              <small>Lấy đồ ra khỏi máy; mẻ quay về chờ vào máy và chạy lại từ đầu.</small>
+              <small>Unload the machine; the batch goes back to waiting and restarts from the beginning.</small>
               <small>{nextMachine(impact.stopped)}</small>
             </div>
           </div>
         )}
         {impact.moved.length > 0 && (
           <div className="pickup-affected-orders">
-            <b>Mẻ chuyển sang máy khác</b>
+            <b>Batches moved to another machine</b>
             {impact.moved.map((stage) => (
               <div key={stage.batch_stage_id}>
                 <span>{stageLabel(stage)}</span>
@@ -1113,25 +1113,25 @@ export function MaintenanceConfirmModal({
         )}
         {impact.unscheduled.length > 0 && (
           <div className="pickup-affected-orders">
-            <b>Mẻ không còn máy để chạy</b>
+            <b>Batches with no machine left</b>
             {impact.unscheduled.map((stage) => (
               <div key={stage.batch_stage_id}>
                 <span>{stageLabel(stage)}</span>
-                <small className="late">Chờ đến khi có máy phù hợp hoạt động trở lại</small>
+                <small className="late">Waiting until a suitable machine is back in service</small>
               </div>
             ))}
           </div>
         )}
         {impact.late_orders.length > 0 && (
           <div className="pickup-affected-orders">
-            <b>Đơn sẽ trễ hẹn</b>
+            <b>Orders that will be late</b>
             {impact.late_orders.map((order) => (
               <div key={order.order_id}>
                 <span>
                   #{order.order_id} · {order.customer}
                 </span>
                 <small className="late">
-                  Hẹn {order.pickup_at ? clockTime(order.pickup_at) : '--:--'} · Dự kiến xong{' '}
+                  Pickup {order.pickup_at ? clockTime(order.pickup_at) : '--:--'} · Expected done{' '}
                   {clockTime(order.estimated_at)}
                 </small>
               </div>
@@ -1141,10 +1141,10 @@ export function MaintenanceConfirmModal({
       </div>
       <footer>
         <button className="secondary" onClick={onClose} disabled={saving}>
-          Hủy
+          Cancel
         </button>
         <button className="primary" onClick={onConfirm} disabled={saving}>
-          {saving ? 'Đang chuyển...' : 'Xác nhận bảo trì'}
+          {saving ? 'Switching...' : 'Confirm maintenance'}
         </button>
       </footer>
     </ModalFrame>
