@@ -16,12 +16,13 @@ export type QueueSnapshot = {
   batches: Map<number, BatchState>
 }
 
-const orderStatusLabels: Record<string, string> = {
-  RECEIVED: 'Mới tiếp nhận',
-  WAITING: 'Đang xử lý',
-  FOLDING_PACKING: 'Đang xếp đồ',
-  READY: 'Sẵn sàng · chờ gửi tin',
-  COMPLETED: 'Đã hoàn tất',
+// What staff see when an order moves to a new status.
+const orderStatusNotices: Record<string, string> = {
+  RECEIVED: 'vừa được tiếp nhận',
+  WAITING: 'đã phân loại xong, đang giặt sấy',
+  FOLDING_PACKING: 'đã giặt sấy xong, chờ xếp đồ',
+  READY: 'đã xong, nhớ báo khách đến lấy',
+  COMPLETED: 'đã báo khách, hoàn tất',
 }
 
 export function snapshotQueue(queue: QueueResponse): QueueSnapshot {
@@ -45,11 +46,16 @@ export function snapshotQueue(queue: QueueResponse): QueueSnapshot {
 
 // What a batch finished when its current stage moved on (or the batch left the queue).
 const stageDone = (before: BatchState) => {
-  const where = `#${before.order_id} · ${before.group} · ${before.customer}`
-  if (before.stage === 'CLASSIFY') return { title: 'Đã phân loại xong', detail: where }
-  if (before.stage === 'PACKING') return { title: 'Đã đóng gói xong', detail: where }
-  return { title: `Đã lấy đồ khỏi ${before.machine_name ?? 'máy'}`, detail: where }
+  const where = describe(before)
+  if (before.stage === 'CLASSIFY') return { title: 'Phân loại xong', detail: where }
+  if (before.stage === 'PACKING') return { title: 'Đóng gói xong', detail: where }
+  return { title: `Đã lấy đồ ra khỏi ${machineName(before)}`, detail: where }
 }
+
+const describe = (batch: BatchState) =>
+  `Đơn #${batch.order_id} · ${batch.group} · ${batch.customer}`
+const machineName = (batch: BatchState) =>
+  batch.machine_name ?? (batch.stage === 'DRY' ? 'máy sấy' : 'máy giặt')
 
 // Notices for the real status changes between two polls of the queue.
 export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Notice, 'id'>[] {
@@ -57,7 +63,7 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
 
   for (const [batchId, prev] of before.batches) {
     const next = after.batches.get(batchId)
-    const where = `#${prev.order_id} · ${prev.group} · ${prev.customer}`
+    const where = describe(prev)
     if (!next || next.batch_stage_id !== prev.batch_stage_id) {
       notices.push({ tone: 'success', ...stageDone(prev) })
       continue
@@ -66,26 +72,26 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
     if (next.stage_status === 'IN_PROGRESS')
       notices.push({
         tone: 'info',
-        title: `Đã cho vào ${next.machine_name ?? 'máy'}`,
+        title: `Đã cho đồ vào ${machineName(next)}`,
         detail: where,
       })
     if (next.stage_status === 'MACHINE_FINISHED')
       notices.push({
         tone: 'warning',
-        title: `✓ ${next.machine_name ?? 'Máy'} đã chạy xong`,
-        detail: `${where} · Lấy đồ ra`,
+        title: `${machineName(next)} đã chạy xong, mời lấy đồ ra`,
+        detail: where,
       })
   }
 
   for (const [orderId, next] of after.orders) {
     const prev = before.orders.get(orderId)
     if (!prev) {
-      notices.push({ tone: 'info', title: `Đơn mới #${orderId}`, detail: next.customer })
+      notices.push({ tone: 'info', title: `Có đơn mới #${orderId}`, detail: next.customer })
     } else if (prev.status !== next.status) {
       notices.push({
         tone: next.status === 'READY' ? 'success' : 'info',
-        title: `Đơn #${orderId}: ${orderStatusLabels[next.status] ?? next.status}`,
-        detail: `${next.customer} · trước đó: ${orderStatusLabels[prev.status] ?? prev.status}`,
+        title: `Đơn #${orderId} ${orderStatusNotices[next.status] ?? 'vừa được cập nhật'}`,
+        detail: next.customer,
       })
     }
   }
@@ -93,8 +99,8 @@ export function diffQueue(before: QueueSnapshot, after: QueueSnapshot): Omit<Not
     if (!after.orders.has(orderId))
       notices.push({
         tone: 'success',
-        title: `Đơn #${orderId}: Đã hoàn tất`,
-        detail: `${prev.customer} · đã gửi tin cho khách`,
+        title: `Đơn #${orderId} đã báo khách, hoàn tất`,
+        detail: prev.customer,
       })
 
   return notices

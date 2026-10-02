@@ -7,23 +7,10 @@
 <br />
 <div align="center">
   <a href="https://github.com/danwanh/WashFlow">
-    <img src="frontend/logo.png" alt="WashFlow logo" width="80" height="80">
+    <img src="frontend/public/logo.png" alt="WashFlow logo" width="80" height="80">
   </a>
 
   <h3 align="center">WashFlow</h3>
-
-  <p align="center">
-    Laundry workflow planning and scheduling for a single laundry store.
-    <br />
-    <a href="spec.md"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="api.md">API</a>
-    &middot;
-    <a href="https://github.com/danwanh/WashFlow/issues/new?labels=bug">Report Bug</a>
-    &middot;
-    <a href="https://github.com/danwanh/WashFlow/issues/new?labels=enhancement">Request Feature</a>
-  </p>
 </div>
 
 
@@ -159,24 +146,29 @@ To run WashFlow locally, start the backend API and the frontend dev server.
 
 Open the URL Vite prints (usually `http://localhost:5173`). The app has four pages:
 
-* **Queue** (`/queue`, the default page) — the next task for each batch, sorted by urgency. Drag a laundry bag onto a machine to start washing or drying. When the cycle ends, the server marks the machine finished. Drag the bag back onto its queue row to unload it. Sorting, packing and customer notification are also done from here.
-* **Overview** (`/overview`) — a summary of the store's current workload.
-* **Orders** (`/orders`) — create an order (review the trial plan and ETA, then confirm), view each batch's timeline, and change pickup times.
-* **Machines** (`/machines`) — put a machine into maintenance or back into service. Before you confirm, it shows which batches will be stopped or moved.
+### Queue
 
-Useful backend commands:
+`/queue` (the default page) — the next task for each batch, sorted by urgency. Drag a laundry bag onto a machine to start washing or drying. When the cycle ends, the server marks the machine finished. Drag the bag back onto its queue row to unload it. Sorting, packing and customer notification are also done from here.
 
-```sh
-npm run typecheck                                 # strict TypeScript check
-npx tsx --test src/services/planner.test.ts       # planner unit tests
-npx tsx --test src/services/rescheduler.test.ts   # rescheduler unit tests
-```
+![Queue page](img/queue.png)
 
-Frontend checks: `npm run lint` (type check) and `npm run build`.
+### Overview
 
-_For the full rules and endpoints, see [`spec.md`](spec.md) and [`api.md`](api.md)._
+`/overview` — a summary of the store's current workload.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+![Overview page](img/dashboard.png)
+
+### Orders
+
+`/orders` — create an order (review the trial plan and ETA, then confirm), view each batch's timeline, and change pickup times.
+
+![Orders page](img/order.png)
+
+### Machines
+
+`/machines` — put a machine into maintenance or back into service. Before you confirm, it shows which batches will be stopped or moved.
+
+![Machines page](img/machine.png)
 
 
 <!-- ROADMAP -->

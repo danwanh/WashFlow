@@ -22,26 +22,24 @@ export function Topbar({ onCreate, taskCount }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="brand-area">
-        <div className="brand-mark">
-          <WashingMachine size={21} />
-        </div>
+        <img className="brand-mark" src="/logo.png" alt="" />
         <div className="brand-copy">
           <strong>WashTrack</strong>
         </div>
-        <nav className="main-nav">
-          {links.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              className={({ isActive }) => `nav-button ${isActive ? 'active' : ''}`}
-            >
-              {link.icon}
-              <span>{link.label}</span>
-              {link.count && <b>{link.count}</b>}
-            </NavLink>
-          ))}
-        </nav>
       </div>
+      <nav className="main-nav">
+        {links.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            className={({ isActive }) => `nav-button ${isActive ? 'active' : ''}`}
+          >
+            {link.icon}
+            <span>{link.label}</span>
+            {link.count && <b>{link.count}</b>}
+          </NavLink>
+        ))}
+      </nav>
       <div className="scenario-bar">
         <button onClick={onCreate}>+ Tạo đơn</button>
       </div>

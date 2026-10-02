@@ -8,6 +8,20 @@ import {
 } from './timing.js'
 
 type Reason = string
+// Staff-facing wording for why a late-risk alert appeared (reason codes stay internal).
+const reasonLabels: Record<string, string> = {
+  NEW_ORDER: 'có đơn mới chen vào lịch',
+  PICKUP_TIME_CHANGED: 'giờ hẹn trả vừa thay đổi',
+  MACHINE_MAINTENANCE: 'có máy chuyển sang bảo trì',
+  MACHINE_RETURNED: 'lịch máy vừa thay đổi',
+  MACHINE_FINISHED: 'lịch máy vừa thay đổi',
+  STAGE_STARTED: 'lịch công đoạn vừa thay đổi',
+  STAGE_UNLOADED: 'lịch công đoạn vừa thay đổi',
+  CLASSIFICATION_COMPLETED: 'lịch công đoạn vừa thay đổi',
+  PACKING_COMPLETED: 'lịch công đoạn vừa thay đổi',
+}
+const lateReason = (reason: Reason) =>
+  `Dự kiến xong sau giờ hẹn trả khách (${reasonLabels[reason] ?? 'lịch vừa được sắp xếp lại'})`
 const MINUTE = 60_000
 const stageOrder = stageRank
 const manualMinutes = (stage: string) =>
@@ -431,7 +445,7 @@ export async function applySchedule(
     if (existing)
       await tx.alert.update({
         where: { alertId: existing.alertId },
-        data: { reason: `ETA bị ảnh hưởng bởi ${reason}` },
+        data: { reason: lateReason(reason) },
       })
     else
       await tx.alert.create({
@@ -439,7 +453,7 @@ export async function applySchedule(
           orderId: order.orderId,
           type: 'LATE_RISK',
           severity: 'WARNING',
-          reason: `ETA bị ảnh hưởng bởi ${reason}`,
+          reason: lateReason(reason),
         },
       })
   }

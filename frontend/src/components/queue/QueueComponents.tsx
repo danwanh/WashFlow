@@ -1,4 +1,12 @@
-import { AlertTriangle, Check, Clock, MessageCircle, PackageCheck, Tags } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  Clock,
+  MessageCircle,
+  PackageCheck,
+  RefreshCw,
+  Tags,
+} from 'lucide-react'
 import type { DragEvent, ReactNode } from 'react'
 import type { QueueTask } from '../../api'
 import type { Task } from '../../types/task'
@@ -33,13 +41,13 @@ function LaundryBagIcon() {
   )
 }
 
-function TaskIcon({ actionType }: { actionType?: Task['actionType'] }) {
-  if (actionType === 'CLASSIFY') return <Tags size={24} strokeWidth={1.8} />
-  if (actionType === 'PACK') return <PackageCheck size={24} strokeWidth={1.8} />
-  if (actionType === 'NOTIFY') return <MessageCircle size={24} strokeWidth={1.8} />
-  if (actionType === 'START' || actionType === 'MACHINE_FINISHED' || actionType === 'UNLOAD') {
-    return <LaundryBagIcon />
-  }
+function TaskIcon({ task }: { task: Task }) {
+  if (task.actionType === 'CLASSIFY') return <Tags size={24} strokeWidth={1.8} />
+  if (task.actionType === 'PACK') return <PackageCheck size={24} strokeWidth={1.8} />
+  if (task.actionType === 'NOTIFY') return <MessageCircle size={24} strokeWidth={1.8} />
+  // A running machine spins; waiting and finished batches show the bag that is dragged.
+  if (task.stageStatus === 'IN_PROGRESS')
+    return <RefreshCw className="spin-icon" size={24} strokeWidth={1.8} />
   return <LaundryBagIcon />
 }
 
@@ -155,7 +163,7 @@ export function TaskCard({
         }}
         title={canDrag ? 'Kéo túi vào máy' : undefined}
       >
-        <TaskIcon actionType={task.actionType} />
+        <TaskIcon task={task} />
       </div>
       <div className="task-info">
         <strong className="task-step">{nextStep(task)}</strong>

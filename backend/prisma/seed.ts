@@ -1,3 +1,9 @@
+// Test-scenario seed: wipes every table, then creates machines and one order per workflow case
+// (sorting, waiting for a machine, running, waiting for unload, packing, ready, completed,
+// late risk, overdue pickup, split/merged batches, forgotten-work alerts...). Times are relative
+// to now so the queue, alerts and overview show each case right after seeding. Statuses of
+// batches, orders and machines are derived from the stages the same way the workflow does.
+// Alerts are not seeded (except history): the server's alert scan creates them on its next tick.
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient, Prisma } from '../generated/prisma/client.js'
@@ -6,24 +12,671 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 })
 
-async function machine(input: {
-  name: string
-  type: 'WASHER' | 'DRYER'
-  status: 'AVAILABLE' | 'BUSY'
-  capacityKg: number
-  processingMinutes: number
-}) {
-  const existing = await prisma.machine.findFirst({
-    where: { name: input.name },
-  })
-  if (existing) {
-    return prisma.machine.update({
-      where: { machineId: existing.machineId },
-      data: input,
-    })
-  }
-  return prisma.machine.create({ data: input })
+const MINUTE = 60_000
+const now = Date.now()
+const at = (minutes: number) => new Date(now + minutes * MINUTE)
+
+type StageName = 'CLASSIFY' | 'WASH' | 'DRY' | 'PACKING'
+type StageStatus = 'PLANNED' | 'IN_PROGRESS' | 'MACHINE_FINISHED' | 'COMPLETED'
+type ServiceType = 'WASH' | 'DRY' | 'WASH_DRY'
+
+// Offsets in minutes from now.
+type StageSpec = {
+  stage: StageName
+  status: StageStatus
+  machine?: string
+  start: number
+  end: number
+  startedAt?: number
+  finishedAt?: number
+  endedAt?: number
 }
+
+type OrderSpec = {
+  scenario: string
+  customer: [name: string, phone: string]
+  service: ServiceType
+  priority?: number
+  createdAt: number
+  pickupAt: number
+  items: { type: string; quantity: number; kg: number; note?: string }[]
+  // Each batch takes [item index, kg] parts: one item may be split over batches, several items
+  // may share a batch.
+  batches: { items: [number, number][]; stages: StageSpec[] }[]
+  readyAt?: number
+  completedAt?: number
+  notifications?: { status: 'SENT' | 'FAILED'; at: number }[]
+  appointments?: { oldPickupAt: number; at: number; reason: string }[]
+  alerts?: {
+    type: string
+    severity: string
+    status: 'OPEN' | 'SNOOZED' | 'RESOLVED'
+    reason: string
+    detectedAt: number
+    snoozedUntil?: number
+    resolvedAt?: number
+  }[]
+}
+
+// ---- stage builders --------------------------------------------------------------------------
+
+// Sorting starts as soon as the order is accepted (as in POST /api/orders).
+const sorting = (start: number, end = start + 10): StageSpec => ({
+  stage: 'CLASSIFY',
+  status: 'PLANNED',
+  start,
+  end,
+  startedAt: start,
+})
+const sorted = (start: number, end = start + 10): StageSpec => ({
+  stage: 'CLASSIFY',
+  status: 'COMPLETED',
+  start,
+  end,
+  startedAt: start,
+  endedAt: end,
+})
+const planned = (stage: StageName, start: number, end: number, machine?: string): StageSpec => ({
+  stage,
+  status: 'PLANNED',
+  start,
+  end,
+  ...(machine ? { machine } : {}),
+})
+const running = (
+  stage: 'WASH' | 'DRY',
+  machine: string,
+  startedAt: number,
+  minutes: number,
+): StageSpec => ({
+  stage,
+  status: 'IN_PROGRESS',
+  machine,
+  start: startedAt,
+  end: startedAt + minutes,
+  startedAt,
+})
+const waitingUnload = (
+  stage: 'WASH' | 'DRY',
+  machine: string,
+  startedAt: number,
+  minutes: number,
+): StageSpec => ({
+  stage,
+  status: 'MACHINE_FINISHED',
+  machine,
+  start: startedAt,
+  end: startedAt + minutes,
+  startedAt,
+  finishedAt: startedAt + minutes,
+})
+// A finished machine stage was unloaded 3 minutes after the cycle ended.
+const washed = (
+  stage: 'WASH' | 'DRY',
+  machine: string,
+  start: number,
+  minutes: number,
+): StageSpec => ({
+  stage,
+  status: 'COMPLETED',
+  machine,
+  start,
+  end: start + minutes,
+  startedAt: start,
+  finishedAt: start + minutes,
+  endedAt: start + minutes + 3,
+})
+const packed = (start: number, end = start + 15): StageSpec => ({
+  stage: 'PACKING',
+  status: 'COMPLETED',
+  start,
+  end,
+  startedAt: start,
+  endedAt: end,
+})
+
+// ---- machines ---------------------------------------------------------------------------------
+
+const machineSpecs = [
+  { name: 'Máy giặt 01', type: 'WASHER', capacityKg: 8, processingMinutes: 45 },
+  { name: 'Máy giặt 02', type: 'WASHER', capacityKg: 10, processingMinutes: 50 },
+  { name: 'Máy giặt 03', type: 'WASHER', capacityKg: 12, processingMinutes: 55 },
+  // Out of service: tests that it gets no work and can be switched back.
+  { name: 'Máy giặt 04', type: 'WASHER', capacityKg: 8, processingMinutes: 40, maintenance: true },
+  { name: 'Máy giặt 05', type: 'WASHER', capacityKg: 15, processingMinutes: 60 },
+  { name: 'Máy giặt 06', type: 'WASHER', capacityKg: 10, processingMinutes: 45 },
+  { name: 'Máy sấy 01', type: 'DRYER', capacityKg: 8, processingMinutes: 50 },
+  { name: 'Máy sấy 02', type: 'DRYER', capacityKg: 10, processingMinutes: 55 },
+  { name: 'Máy sấy 03', type: 'DRYER', capacityKg: 12, processingMinutes: 60 },
+  { name: 'Máy sấy 04', type: 'DRYER', capacityKg: 8, processingMinutes: 45 },
+] as const
+
+const W1 = 'Máy giặt 01'
+const W2 = 'Máy giặt 02'
+const W3 = 'Máy giặt 03'
+const W5 = 'Máy giặt 05'
+const W6 = 'Máy giặt 06'
+const D1 = 'Máy sấy 01'
+const D2 = 'Máy sấy 02'
+const D3 = 'Máy sấy 03'
+const D4 = 'Máy sấy 04'
+
+// ---- scenarios --------------------------------------------------------------------------------
+
+const DAY = 24 * 60
+
+const orders: OrderSpec[] = [
+  // RECEIVED ----------------------------------------------------------------------------------
+  {
+    scenario: 'Vừa nhận đơn, đang phân loại',
+    customer: ['Trần Minh Anh', '0901000001'],
+    service: 'WASH_DRY',
+    createdAt: -3,
+    pickupAt: 240,
+    items: [{ type: 'shirt', quantity: 6, kg: 3 }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [
+          sorting(-3),
+          planned('WASH', 20, 70, W6),
+          planned('DRY', 75, 120, D4),
+          planned('PACKING', 120, 135),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Phân loại quá hạn (trễ công đoạn thủ công)',
+    customer: ['Lê Hoàng Nam', '0901000002'],
+    service: 'WASH',
+    priority: 1,
+    createdAt: -40,
+    pickupAt: 150,
+    items: [{ type: 'dark', quantity: 8, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [sorting(-40), planned('WASH', 5, 60, W3), planned('PACKING', 60, 75)],
+      },
+    ],
+  },
+  {
+    scenario: 'Một món nặng tách thành 2 mẻ',
+    customer: ['Phạm Thu Hà', '0901000003'],
+    service: 'WASH_DRY',
+    createdAt: -5,
+    pickupAt: 360,
+    items: [{ type: 'blanket', quantity: 3, kg: 18, note: 'Chăn bông lớn' }],
+    batches: [
+      {
+        items: [[0, 10]],
+        stages: [
+          sorting(-5),
+          planned('WASH', 65, 115, W2),
+          planned('DRY', 120, 175, D2),
+          planned('PACKING', 175, 190),
+        ],
+      },
+      {
+        items: [[0, 8]],
+        stages: [
+          sorting(-5),
+          planned('WASH', 40, 85, W1),
+          planned('DRY', 90, 140, D1),
+          planned('PACKING', 140, 155),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Nhiều món cùng nhóm gộp chung 1 mẻ',
+    customer: ['Đỗ Gia Bảo', '0901000004'],
+    service: 'WASH',
+    createdAt: -6,
+    pickupAt: 300,
+    items: [
+      { type: 'shirt', quantity: 4, kg: 2 },
+      { type: 'white', quantity: 3, kg: 1.5, note: 'Đồ trắng' },
+    ],
+    batches: [
+      {
+        items: [
+          [0, 2],
+          [1, 1.5],
+        ],
+        stages: [sorting(-6), planned('WASH', 60, 115, W3), planned('PACKING', 115, 130)],
+      },
+    ],
+  },
+
+  // WAITING -----------------------------------------------------------------------------------
+  {
+    scenario: 'Đã phân loại, chưa đến giờ vào máy',
+    customer: ['Vũ Ngọc Lan', '0901000005'],
+    service: 'WASH_DRY',
+    createdAt: -30,
+    pickupAt: 240,
+    items: [{ type: 'towel', quantity: 10, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-30),
+          planned('WASH', 40, 85, W1),
+          planned('DRY', 85, 145, D3),
+          planned('PACKING', 145, 160),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Đến giờ vào máy (kéo túi vào máy giặt trống)',
+    customer: ['Hoàng Đức Huy', '0901000006'],
+    service: 'WASH_DRY',
+    createdAt: -25,
+    pickupAt: 200,
+    items: [{ type: 'light', quantity: 7, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-25, -15),
+          planned('WASH', -1, 44, W6),
+          planned('DRY', 45, 90, D4),
+          planned('PACKING', 90, 105),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Chờ vào máy quá lâu (cảnh báo quên mẻ chờ)',
+    customer: ['Bùi Thị Mai', '0901000007'],
+    service: 'WASH',
+    createdAt: -65,
+    pickupAt: 120,
+    items: [{ type: 'color', quantity: 9, kg: 4.5 }],
+    batches: [
+      {
+        items: [[0, 4.5]],
+        stages: [sorted(-65, -55), planned('WASH', -45, 0, W6), planned('PACKING', 0, 15)],
+      },
+    ],
+  },
+  {
+    scenario: 'Đang giặt',
+    customer: ['Ngô Quốc Việt', '0901000008'],
+    service: 'WASH_DRY',
+    createdAt: -25,
+    pickupAt: 180,
+    items: [{ type: 'sport', quantity: 5, kg: 3.5 }],
+    batches: [
+      {
+        items: [[0, 3.5]],
+        stages: [
+          sorted(-25, -15),
+          running('WASH', W1, -10, 45),
+          planned('DRY', 45, 90, D4),
+          planned('PACKING', 90, 105),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Sắp giặt xong (máy tự chuyển sang chờ lấy đồ sau ~3 phút)',
+    customer: ['Đặng Thùy Linh', '0901000009'],
+    service: 'WASH',
+    createdAt: -65,
+    pickupAt: 120,
+    items: [{ type: 'jeans', quantity: 4, kg: 6 }],
+    batches: [
+      {
+        items: [[0, 6]],
+        stages: [sorted(-65, -55), running('WASH', W3, -52, 55), planned('PACKING', 5, 20)],
+      },
+    ],
+  },
+  {
+    scenario: 'Giặt xong, chờ lấy đồ ra',
+    customer: ['Phan Văn Tài', '0901000010'],
+    service: 'WASH_DRY',
+    createdAt: -80,
+    pickupAt: 200,
+    items: [{ type: 'shirt', quantity: 12, kg: 6 }],
+    batches: [
+      {
+        items: [[0, 6]],
+        stages: [
+          sorted(-80, -70),
+          waitingUnload('WASH', W2, -55, 50),
+          planned('DRY', 0, 55, D2),
+          planned('PACKING', 55, 70),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Sấy xong nhưng quên lấy đồ (cảnh báo nghiêm trọng)',
+    customer: ['Lý Hải Yến', '0901000011'],
+    service: 'WASH_DRY',
+    priority: 1,
+    createdAt: -150,
+    pickupAt: 30,
+    items: [{ type: 'towel', quantity: 12, kg: 7 }],
+    batches: [
+      {
+        items: [[0, 7]],
+        stages: [
+          sorted(-150, -140),
+          washed('WASH', W1, -135, 45),
+          waitingUnload('DRY', D3, -85, 60),
+          planned('PACKING', -20, -5),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Đang sấy',
+    customer: ['Trịnh Gia Hân', '0901000012'],
+    service: 'WASH_DRY',
+    createdAt: -120,
+    pickupAt: 120,
+    items: [{ type: 'dark', quantity: 10, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-120, -110),
+          washed('WASH', W5, -105, 60),
+          running('DRY', D1, -20, 50),
+          planned('PACKING', 30, 45),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Dịch vụ chỉ sấy, đến giờ vào máy sấy',
+    customer: ['Mai Anh Tuấn', '0901000013'],
+    service: 'DRY',
+    createdAt: -15,
+    pickupAt: 150,
+    items: [{ type: 'blanket', quantity: 1, kg: 3, note: 'Chỉ sấy khô' }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [sorted(-15, -5), planned('DRY', -1, 44, D4), planned('PACKING', 44, 59)],
+      },
+    ],
+  },
+  {
+    scenario: 'Nguy cơ trễ hẹn (cảnh báo đã hoãn 20 phút)',
+    customer: ['Hồ Thanh Tâm', '0901000014'],
+    service: 'WASH_DRY',
+    priority: 1,
+    createdAt: -40,
+    pickupAt: 90,
+    items: [{ type: 'delicate', quantity: 3, kg: 2, note: 'Đồ len, giặt nhẹ' }],
+    batches: [
+      {
+        items: [[0, 2]],
+        stages: [
+          sorted(-40, -30),
+          planned('WASH', 50, 95, W6),
+          planned('DRY', 100, 150, D1),
+          planned('PACKING', 150, 165),
+        ],
+      },
+    ],
+    alerts: [
+      {
+        type: 'LATE_RISK',
+        severity: 'WARNING',
+        status: 'SNOOZED',
+        reason: 'Dự kiến xong sau giờ hẹn trả khách',
+        detectedAt: -10,
+        snoozedUntil: 20,
+      },
+    ],
+  },
+  {
+    scenario: 'Đã quá giờ hẹn trả',
+    customer: ['Châu Minh Khoa', '0901000015'],
+    service: 'WASH_DRY',
+    createdAt: -200,
+    pickupAt: -20,
+    items: [{ type: 'color', quantity: 8, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-200, -190),
+          washed('WASH', W2, -185, 50),
+          planned('DRY', 5, 65, D3),
+          planned('PACKING', 65, 80),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Đơn 2 mẻ tiến độ khác nhau (1 mẻ đang giặt, 1 mẻ chờ đóng gói)',
+    customer: ['Tạ Bích Ngọc', '0901000016'],
+    service: 'WASH',
+    createdAt: -90,
+    pickupAt: 240,
+    items: [
+      { type: 'jeans', quantity: 6, kg: 9 },
+      { type: 'shirt', quantity: 6, kg: 3 },
+    ],
+    batches: [
+      {
+        items: [[0, 9]],
+        stages: [sorted(-90, -80), running('WASH', W5, -30, 60), planned('PACKING', 30, 45)],
+      },
+      {
+        items: [[1, 3]],
+        stages: [sorted(-90, -80), washed('WASH', W1, -78, 45), planned('PACKING', -28, -13)],
+      },
+    ],
+  },
+  {
+    scenario: 'Khách đã dời giờ hẹn trả',
+    customer: ['Dương Khánh Vy', '0901000017'],
+    service: 'WASH',
+    createdAt: -20,
+    pickupAt: 300,
+    items: [{ type: 'light', quantity: 5, kg: 3 }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [sorted(-20, -10), planned('WASH', 100, 145, W6), planned('PACKING', 145, 160)],
+      },
+    ],
+    appointments: [{ oldPickupAt: 60, at: -8, reason: 'Khách hẹn lấy muộn hơn' }],
+  },
+  {
+    scenario: 'Hẹn trả ngày mai',
+    customer: ['Kiều Văn Lộc', '0901000018'],
+    service: 'WASH_DRY',
+    createdAt: -10,
+    pickupAt: DAY + 120,
+    items: [{ type: 'black', quantity: 6, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-10, 0),
+          planned('WASH', 180, 230, W2),
+          planned('DRY', 235, 290, D2),
+          planned('PACKING', 290, 305),
+        ],
+      },
+    ],
+  },
+
+  // FOLDING_PACKING ---------------------------------------------------------------------------
+  {
+    scenario: 'Giặt sấy xong, chờ đóng gói',
+    customer: ['Lâm Nhật Minh', '0901000019'],
+    service: 'WASH_DRY',
+    createdAt: -150,
+    pickupAt: 60,
+    items: [{ type: 'shirt', quantity: 8, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-150, -140),
+          washed('WASH', W2, -135, 50),
+          washed('DRY', D1, -80, 50),
+          planned('PACKING', -5, 10),
+        ],
+      },
+    ],
+  },
+  {
+    scenario: 'Quên đóng gói (cảnh báo chờ xếp đồ quá lâu)',
+    customer: ['Quách Thảo Nhi', '0901000020'],
+    service: 'WASH',
+    createdAt: -200,
+    pickupAt: 15,
+    items: [{ type: 'dark', quantity: 7, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [sorted(-200, -190), washed('WASH', W3, -185, 55), planned('PACKING', -125, -110)],
+      },
+    ],
+  },
+
+  // READY -------------------------------------------------------------------------------------
+  {
+    scenario: 'Sẵn sàng, chưa báo khách',
+    customer: ['Nguyễn Văn An', '0901000021'],
+    service: 'WASH',
+    createdAt: -110,
+    pickupAt: 60,
+    items: [{ type: 'towel', quantity: 4, kg: 3 }],
+    batches: [
+      {
+        items: [[0, 3]],
+        stages: [sorted(-110, -100), washed('WASH', W6, -95, 45), packed(-25, -5)],
+      },
+    ],
+    readyAt: -5,
+  },
+  {
+    scenario: 'Gửi tin báo khách thất bại (cảnh báo chưa báo khách)',
+    customer: ['Võ Thị Hồng', '0901000022'],
+    service: 'WASH_DRY',
+    createdAt: -200,
+    pickupAt: 30,
+    items: [{ type: 'sport', quantity: 6, kg: 4 }],
+    batches: [
+      {
+        items: [[0, 4]],
+        stages: [
+          sorted(-200, -190),
+          washed('WASH', W1, -185, 45),
+          washed('DRY', D2, -135, 55),
+          packed(-75, -45),
+        ],
+      },
+    ],
+    readyAt: -45,
+    notifications: [{ status: 'FAILED', at: -40 }],
+  },
+
+  // COMPLETED ---------------------------------------------------------------------------------
+  {
+    scenario: 'Hoàn tất đúng hẹn',
+    customer: ['Trần Quang Duy', '0901000023'],
+    service: 'WASH_DRY',
+    createdAt: -300,
+    pickupAt: -30,
+    items: [{ type: 'shirt', quantity: 10, kg: 5 }],
+    batches: [
+      {
+        items: [[0, 5]],
+        stages: [
+          sorted(-300, -290),
+          washed('WASH', W2, -285, 50),
+          washed('DRY', D2, -230, 55),
+          packed(-170, -150),
+        ],
+      },
+    ],
+    readyAt: -150,
+    completedAt: -148,
+    notifications: [{ status: 'SENT', at: -148 }],
+    alerts: [
+      {
+        type: 'MACHINE_FINISHED',
+        severity: 'INFO',
+        status: 'RESOLVED',
+        reason: 'Đã lấy đồ ra khỏi máy',
+        detectedAt: -230,
+        resolvedAt: -227,
+      },
+    ],
+  },
+  {
+    scenario: 'Hoàn tất nhưng trễ hẹn',
+    customer: ['Phạm Hải Đăng', '0901000024'],
+    service: 'WASH',
+    createdAt: -360,
+    pickupAt: -180,
+    items: [{ type: 'jeans', quantity: 5, kg: 7 }],
+    batches: [
+      {
+        items: [[0, 7]],
+        stages: [sorted(-360, -350), washed('WASH', W3, -300, 55), packed(-220, -150)],
+      },
+    ],
+    readyAt: -150,
+    completedAt: -140,
+    notifications: [
+      { status: 'FAILED', at: -145 },
+      { status: 'SENT', at: -140 },
+    ],
+    alerts: [
+      {
+        type: 'LATE_RISK',
+        severity: 'WARNING',
+        status: 'RESOLVED',
+        reason: 'Dự kiến xong sau giờ hẹn trả khách',
+        detectedAt: -290,
+        resolvedAt: -140,
+      },
+    ],
+  },
+  {
+    scenario: 'Hoàn tất hôm qua',
+    customer: ['Đinh Mỹ Linh', '0901000025'],
+    service: 'WASH_DRY',
+    createdAt: -DAY - 300,
+    pickupAt: -DAY - 60,
+    items: [{ type: 'light', quantity: 6, kg: 3.5 }],
+    batches: [
+      {
+        items: [[0, 3.5]],
+        stages: [
+          sorted(-DAY - 300, -DAY - 290),
+          washed('WASH', W1, -DAY - 285, 45),
+          washed('DRY', D1, -DAY - 235, 50),
+          packed(-DAY - 180, -DAY - 165),
+        ],
+      },
+    ],
+    readyAt: -DAY - 165,
+    completedAt: -DAY - 160,
+    notifications: [{ status: 'SENT', at: -DAY - 160 }],
+  },
+]
+
+// ---- writers ----------------------------------------------------------------------------------
+
+const stageOrder: StageName[] = ['CLASSIFY', 'WASH', 'DRY', 'PACKING']
+const serviceRate: Record<ServiceType, number> = { WASH: 25000, DRY: 20000, WASH_DRY: 40000 }
 
 async function resetDatabase() {
   await prisma.$transaction([
@@ -40,483 +693,217 @@ async function resetDatabase() {
   ])
 }
 
-type SeedOrderStatus = 'RECEIVED' | 'WAITING' | 'FOLDING_PACKING' | 'READY' | 'COMPLETED'
+// Batch state as the workflow leaves it: the first unfinished stage decides it.
+function batchState(stages: StageSpec[]) {
+  const next = stages.find((stage) => stage.status !== 'COMPLETED')
+  if (!next) return { status: 'COMPLETED' as const, currentStage: null }
+  const status =
+    next.status === 'IN_PROGRESS'
+      ? next.stage === 'WASH'
+        ? ('WASHING' as const)
+        : ('DRYING' as const)
+      : next.status === 'MACHINE_FINISHED'
+        ? ('WAITING_FOR_UNLOAD' as const)
+        : ('WAITING' as const)
+  return { status, currentStage: next.stage }
+}
 
-async function seedOrders(
-  status: SeedOrderStatus,
-  count: number,
-  now: Date,
-  washerIds: number[],
-  dryerIds: number[],
-) {
-  const names = [
-    'Trần Minh Anh',
-    'Lê Hoàng Nam',
-    'Phạm Thu Hà',
-    'Đỗ Gia Bảo',
-    'Vũ Ngọc Lan',
-  ]
-  const itemTypes = ['shirt', 'trousers', 'blanket', 'towel', 'dress']
+// Projected end of a batch: unfinished work never ends before now (as the rescheduler does).
+function batchEta(stages: StageSpec[]) {
+  let time = Number.NEGATIVE_INFINITY
+  for (const stage of stages) {
+    if (stage.status === 'COMPLETED') time = Math.max(time, stage.endedAt ?? stage.end)
+    else if (stage.status === 'MACHINE_FINISHED') time = Math.max(time, 0)
+    else if (stage.status === 'IN_PROGRESS') time = Math.max(time, 0, stage.end)
+    else time = Math.max(time, 0, stage.start) + (stage.end - stage.start)
+  }
+  return time
+}
 
-  for (let index = 0; index < count; index += 1) {
-    const customer = await prisma.customer.create({
-      data: {
-        name: names[index % names.length]!,
-        phone: `09100000${String(status.length * 10 + index).padStart(2, '0')}`,
-      },
-    })
-    // Finished orders started long enough ago that every actual time is in the past.
-    const createdAt = new Date(
-      now.getTime() -
-        (index + (status === 'RECEIVED' || status === 'WAITING' ? 1 : 4)) * 60 * 60 * 1000,
+// Order status follows its stages, like syncOrderStatus; COMPLETED needs a sent notification.
+function orderStatus(spec: OrderSpec, stages: StageSpec[]) {
+  const done = (stage: StageSpec) => stage.status === 'COMPLETED'
+  if (stages.every(done)) return spec.completedAt !== undefined ? 'COMPLETED' : 'READY'
+  if (stages.filter((stage) => stage.stage !== 'PACKING').every(done)) return 'FOLDING_PACKING'
+  if (stages.filter((stage) => stage.stage === 'CLASSIFY').every(done)) return 'WAITING'
+  return 'RECEIVED'
+}
+
+async function seedOrder(spec: OrderSpec, machineIds: Map<string, number>) {
+  for (const batch of spec.batches)
+    batch.stages.sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage))
+  const stages = spec.batches.flatMap((batch) => batch.stages)
+  const status = orderStatus(spec, stages)
+  const totalKg = spec.items.reduce((sum, item) => sum + item.kg, 0)
+  const lastEnd = (stage: StageName) =>
+    Math.max(...stages.filter((s) => s.stage === stage).map((s) => s.endedAt ?? s.end))
+  const etas = spec.batches.map((batch) => batchEta(batch.stages))
+  const orderEta =
+    status === 'READY' || status === 'COMPLETED' ? (spec.readyAt ?? 0) : Math.max(...etas)
+
+  const customer = await prisma.customer.create({
+    data: { name: spec.customer[0], phone: spec.customer[1], createdAt: at(spec.createdAt) },
+  })
+  const order = await prisma.laundryOrder.create({
+    data: {
+      customerId: customer.customerId,
+      serviceType: spec.service,
+      status,
+      totalWeightKg: new Prisma.Decimal(totalKg),
+      totalAmount: new Prisma.Decimal(totalKg * serviceRate[spec.service]),
+      pickupAt: at(spec.pickupAt),
+      estimatedAt: at(orderEta),
+      priority: spec.priority ?? 0,
+      specialNote: spec.scenario,
+      createdAt: at(spec.createdAt),
+      ...(status !== 'RECEIVED' ? { classifiedAt: at(lastEnd('CLASSIFY')) } : {}),
+      ...(status === 'READY' || status === 'COMPLETED'
+        ? {
+            packingCompletedAt: at(lastEnd('PACKING')),
+            readyAt: at(spec.readyAt ?? lastEnd('PACKING')),
+          }
+        : {}),
+      ...(spec.completedAt !== undefined ? { completedAt: at(spec.completedAt) } : {}),
+    },
+  })
+
+  const items = []
+  for (const item of spec.items)
+    items.push(
+      await prisma.orderItem.create({
+        data: {
+          orderId: order.orderId,
+          itemType: item.type,
+          quantity: item.quantity,
+          weightKg: new Prisma.Decimal(item.kg),
+          note: item.note ?? null,
+        },
+      }),
     )
-    const isCompleted = status === 'COMPLETED'
-    const isReady = status === 'READY'
-    const isPacking = status === 'FOLDING_PACKING'
-    const isProcessed = isCompleted || isReady || isPacking
-    const isClassified = status !== 'RECEIVED'
-    const isPacked = isCompleted || isReady
-    const itemType = itemTypes[index % itemTypes.length]!
-    const weightKg = 1.5 + index * 0.5
-    const serviceType = index % 2 === 0 ? 'WASH_DRY' : 'WASH'
-    const serviceRate = serviceType === 'WASH_DRY' ? 40000 : 25000
-    const isHistorical = isProcessed
-    const scheduleOffsetHours = status === 'RECEIVED' ? 1 : status === 'WAITING' ? 4 : 0
-    const washStart = isHistorical
-      ? new Date(createdAt.getTime() + 15 * 60 * 1000)
-      : new Date(now.getTime() + (index + scheduleOffsetHours) * 60 * 60 * 1000)
-    const washEnd = new Date(washStart.getTime() + 45 * 60 * 1000)
-    const dryStart = new Date(washEnd.getTime() + 10 * 60 * 1000)
-    const dryEnd = new Date(dryStart.getTime() + 50 * 60 * 1000)
 
-    const order = await prisma.laundryOrder.create({
-      data: {
-        customerId: customer.customerId,
-        serviceType,
-        status,
-        totalWeightKg: new Prisma.Decimal(weightKg),
-        totalAmount: new Prisma.Decimal(weightKg * serviceRate),
-        pickupAt: new Date(now.getTime() + (index + 2) * 60 * 60 * 1000),
-        estimatedAt: isProcessed
-          ? new Date(now.getTime() - 30 * 60 * 1000)
-          : new Date(now.getTime() + 90 * 60 * 1000),
-        priority: index % 2,
-        specialNote: `SEED_STATUS_${status}_${index + 1}`,
-        createdAt,
-        ...(status !== 'RECEIVED' ? { classifiedAt: new Date(createdAt.getTime() + 10 * 60 * 1000) } : {}),
-        ...(isPacked
-          ? { packingCompletedAt: new Date(now.getTime() - 20 * 60 * 1000) }
-          : {}),
-        ...(isReady || isCompleted ? { readyAt: new Date(now.getTime() - 15 * 60 * 1000) } : {}),
-        ...(isCompleted ? { completedAt: new Date(now.getTime() - 5 * 60 * 1000) } : {}),
-      },
-    })
-    const item = await prisma.orderItem.create({
-      data: {
-        orderId: order.orderId,
-        itemType,
-        quantity: 2 + index,
-        weightKg: new Prisma.Decimal(weightKg),
-      },
-    })
+  for (const [index, batchSpec] of spec.batches.entries()) {
+    const state = batchState(batchSpec.stages)
+    const weightKg = batchSpec.items.reduce((sum, [, kg]) => sum + kg, 0)
+    // A batch waiting for a machine has been waiting since its previous stage ended
+    // (the forgotten-waiting alert measures from the batch's last update).
+    const previousEnd = batchSpec.stages
+      .filter((stage) => stage.status === 'COMPLETED')
+      .map((stage) => stage.endedAt ?? stage.end)
+      .at(-1)
     const batch = await prisma.orderBatch.create({
       data: {
         orderId: order.orderId,
-        batchNo: 1,
+        batchNo: index + 1,
         weightKg: new Prisma.Decimal(weightKg),
-        status: isPacked ? 'COMPLETED' : 'WAITING',
-        currentStage: isPacked ? null : isPacking ? 'PACKING' : isClassified ? 'WASH' : 'CLASSIFY',
-        ...(isPacked ? { completedAt: new Date(now.getTime() - 25 * 60 * 1000) } : {}),
+        status: state.status,
+        currentStage: state.currentStage,
+        estimatedAt: at(etas[index]!),
+        createdAt: at(spec.createdAt),
+        updatedAt: at(previousEnd ?? spec.createdAt),
+        ...(state.status === 'COMPLETED' ? { completedAt: at(lastEnd('PACKING')) } : {}),
       },
     })
-    await prisma.batchItem.create({
-      data: { batchId: batch.batchId, orderItemId: item.orderItemId, weightKg: new Prisma.Decimal(weightKg) },
-    })
-    const classifyStart = new Date(createdAt.getTime())
-    const classifyEnd = new Date(classifyStart.getTime() + 10 * 60 * 1000)
-    await prisma.batchStage.create({
-      data: {
-        batchId: batch.batchId,
-        stage: 'CLASSIFY',
-        status: isClassified ? 'COMPLETED' : 'PLANNED',
-        plannedStartAt: classifyStart,
-        plannedEndAt: classifyEnd,
-        actualStartedAt: classifyStart,
-        ...(isClassified ? { actualEndedAt: classifyEnd } : {}),
-      },
-    })
-    await prisma.batchStage.create({
-      data: {
-        batchId: batch.batchId,
-        machineId: washerIds[index % washerIds.length],
-        stage: 'WASH',
-        status: isProcessed ? 'COMPLETED' : 'PLANNED',
-        plannedStartAt: washStart,
-        plannedEndAt: washEnd,
-        ...(isProcessed
-          ? {
-              actualStartedAt: washStart,
-              actualMachineFinishedAt: washEnd,
-              actualEndedAt: new Date(washEnd.getTime() + 5 * 60 * 1000),
-            }
-          : {}),
-      },
-    })
-    if (serviceType === 'WASH_DRY') {
+    for (const [itemIndex, kg] of batchSpec.items)
+      await prisma.batchItem.create({
+        data: {
+          batchId: batch.batchId,
+          orderItemId: items[itemIndex]!.orderItemId,
+          weightKg: new Prisma.Decimal(kg),
+        },
+      })
+    for (const stage of batchSpec.stages) {
+      const machineId = stage.machine ? machineIds.get(stage.machine) : undefined
+      if (stage.machine && machineId === undefined)
+        throw new Error(`Unknown machine ${stage.machine}`)
       await prisma.batchStage.create({
         data: {
           batchId: batch.batchId,
-          machineId: dryerIds[index % dryerIds.length],
-          stage: 'DRY',
-          status: isProcessed ? 'COMPLETED' : 'PLANNED',
-          plannedStartAt: dryStart,
-          plannedEndAt: dryEnd,
-          ...(isProcessed
-            ? {
-                actualStartedAt: dryStart,
-                actualMachineFinishedAt: dryEnd,
-                actualEndedAt: new Date(dryEnd.getTime() + 5 * 60 * 1000),
-              }
-            : {}),
+          machineId: machineId ?? null,
+          stage: stage.stage,
+          status: stage.status,
+          plannedStartAt: at(stage.start),
+          plannedEndAt: at(stage.end),
+          actualStartedAt: stage.startedAt !== undefined ? at(stage.startedAt) : null,
+          actualMachineFinishedAt: stage.finishedAt !== undefined ? at(stage.finishedAt) : null,
+          actualEndedAt: stage.endedAt !== undefined ? at(stage.endedAt) : null,
         },
       })
     }
-    const packingStart = new Date(
-      (serviceType === 'WASH_DRY' ? dryEnd : washEnd).getTime() + 5 * 60 * 1000,
-    )
-    const packingEnd = new Date(packingStart.getTime() + 15 * 60 * 1000)
-    await prisma.batchStage.create({
-      data: {
-        batchId: batch.batchId,
-        stage: 'PACKING',
-        status: isPacked ? 'COMPLETED' : 'PLANNED',
-        plannedStartAt: packingStart,
-        plannedEndAt: packingEnd,
-        ...(isPacked ? { actualEndedAt: packingEnd } : {}),
-      },
-    })
   }
-}
 
-async function main() {
-  await resetDatabase()
-
-  const washer = await machine({
-    name: 'Máy giặt 01',
-    type: 'WASHER',
-    status: 'AVAILABLE',
-    capacityKg: 8,
-    processingMinutes: 45,
-  })
-  const dryer = await machine({
-    name: 'Máy sấy 01',
-    type: 'DRYER',
-    status: 'AVAILABLE',
-    capacityKg: 8,
-    processingMinutes: 50,
-  })
-  const washer2 = await machine({
-    name: 'Máy giặt 02',
-    type: 'WASHER',
-    status: 'AVAILABLE',
-    capacityKg: 10,
-    processingMinutes: 50,
-  })
-  const washer3 = await machine({
-    name: 'Máy giặt 03',
-    type: 'WASHER',
-    status: 'AVAILABLE',
-    capacityKg: 12,
-    processingMinutes: 55,
-  })
-  const washer4 = await machine({
-    name: 'Máy giặt 04',
-    type: 'WASHER',
-    status: 'AVAILABLE',
-    capacityKg: 8,
-    processingMinutes: 40,
-  })
-  const dryer2 = await machine({
-    name: 'Máy sấy 02',
-    type: 'DRYER',
-    status: 'AVAILABLE',
-    capacityKg: 10,
-    processingMinutes: 55,
-  })
-  const dryer3 = await machine({
-    name: 'Máy sấy 03',
-    type: 'DRYER',
-    status: 'AVAILABLE',
-    capacityKg: 12,
-    processingMinutes: 60,
-  })
-  const dryer4 = await machine({
-    name: 'Máy sấy 04',
-    type: 'DRYER',
-    status: 'AVAILABLE',
-    capacityKg: 8,
-    processingMinutes: 45,
-  })
-
-  const customer = await prisma.customer.upsert({
-    where: { customerId: 1 },
-    update: { name: 'Nguyễn Văn A', phone: '0900000000' },
-    create: { name: 'Nguyễn Văn A', phone: '0900000000' },
-  })
-
-  const existingProcessing = await prisma.laundryOrder.findFirst({
-    where: {
-      customerId: customer.customerId,
-      specialNote: 'SEED_PROCESSING_ORDER',
-    },
-  })
-  if (!existingProcessing) {
-    const now = new Date()
-    const order = await prisma.laundryOrder.create({
-      data: {
-        customerId: customer.customerId,
-        serviceType: 'WASH_DRY',
-         status: 'WAITING',
-         classifiedAt: new Date(now.getTime() - 5 * 60 * 1000),
-         totalWeightKg: new Prisma.Decimal(2.5),
-         totalAmount: new Prisma.Decimal(2.5 * 40000),
-        pickupAt: new Date(now.getTime() + 4 * 60 * 60 * 1000),
-        estimatedAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
-        priority: 1,
-        specialNote: 'SEED_PROCESSING_ORDER',
-      },
-    })
-    const item = await prisma.orderItem.create({
-      data: {
-        orderId: order.orderId,
-        itemType: 'shirt',
-        quantity: 5,
-        weightKg: new Prisma.Decimal(2.5),
-        note: 'Áo sơ mi màu',
-      },
-    })
-    const batch = await prisma.orderBatch.create({
-      data: {
-        orderId: order.orderId,
-        batchNo: 1,
-        weightKg: new Prisma.Decimal(2.5),
-        status: 'WASHING',
-        currentStage: 'WASH',
-      },
-    })
-    await prisma.batchItem.create({
-      data: {
-        batchId: batch.batchId,
-        orderItemId: item.orderItemId,
-        weightKg: new Prisma.Decimal(2.5),
-      },
-    })
-    await prisma.batchStage.createMany({
-      data: [
-        {
-          batchId: batch.batchId,
-          stage: 'CLASSIFY',
-          status: 'COMPLETED',
-          plannedStartAt: new Date(now.getTime() - 15 * 60 * 1000),
-          plannedEndAt: new Date(now.getTime() - 5 * 60 * 1000),
-          actualStartedAt: new Date(now.getTime() - 15 * 60 * 1000),
-          actualEndedAt: new Date(now.getTime() - 5 * 60 * 1000),
-        },
-        {
-          batchId: batch.batchId,
-          machineId: washer.machineId,
-          stage: 'WASH',
-          status: 'IN_PROGRESS',
-          plannedStartAt: now,
-          plannedEndAt: new Date(now.getTime() + 45 * 60 * 1000),
-          actualStartedAt: now,
-        },
-        {
-          batchId: batch.batchId,
-          machineId: dryer.machineId,
-          stage: 'DRY',
-          status: 'PLANNED',
-          plannedStartAt: new Date(now.getTime() + 50 * 60 * 1000),
-          plannedEndAt: new Date(now.getTime() + 100 * 60 * 1000),
-        },
-        {
-          batchId: batch.batchId,
-          stage: 'PACKING',
-          status: 'PLANNED',
-          plannedStartAt: new Date(now.getTime() + 100 * 60 * 1000),
-          plannedEndAt: new Date(now.getTime() + 115 * 60 * 1000),
-        },
-      ],
-    })
-  }
-  await prisma.machine.update({
-    where: { machineId: washer.machineId },
-    data: { status: 'BUSY' },
-  })
-
-  const existingReady = await prisma.laundryOrder.findFirst({
-    where: { customerId: customer.customerId, specialNote: 'SEED_READY_ORDER' },
-  })
-  if (!existingReady) {
-    const now = new Date()
-    const order = await prisma.laundryOrder.create({
-      data: {
-        customerId: customer.customerId,
-        serviceType: 'WASH',
-         status: 'READY',
-         classifiedAt: new Date(now.getTime() - 120 * 60 * 1000),
-         totalWeightKg: new Prisma.Decimal(3),
-         totalAmount: new Prisma.Decimal(3 * 25000),
-        pickupAt: new Date(now.getTime() + 90 * 60 * 1000),
-        estimatedAt: new Date(now.getTime() - 10 * 60 * 1000),
-        priority: 0,
-        specialNote: 'SEED_READY_ORDER',
-        packingCompletedAt: new Date(now.getTime() - 15 * 60 * 1000),
-        readyAt: new Date(now.getTime() - 15 * 60 * 1000),
-      },
-    })
-    const item = await prisma.orderItem.create({
-      data: {
-        orderId: order.orderId,
-        itemType: 'towel',
-        quantity: 4,
-        weightKg: new Prisma.Decimal(3),
-      },
-    })
-    const batch = await prisma.orderBatch.create({
-      data: {
-        orderId: order.orderId,
-        batchNo: 1,
-        weightKg: new Prisma.Decimal(3),
-        status: 'COMPLETED',
-        completedAt: now,
-      },
-    })
-    await prisma.batchItem.create({
-      data: {
-        batchId: batch.batchId,
-        orderItemId: item.orderItemId,
-        weightKg: new Prisma.Decimal(3),
-      },
-    })
-    await prisma.batchStage.create({
-      data: {
-        batchId: batch.batchId,
-        machineId: washer.machineId,
-        stage: 'WASH',
-        status: 'COMPLETED',
-        plannedStartAt: new Date(now.getTime() - 120 * 60 * 1000),
-        plannedEndAt: new Date(now.getTime() - 75 * 60 * 1000),
-        actualStartedAt: new Date(now.getTime() - 120 * 60 * 1000),
-        actualMachineFinishedAt: new Date(now.getTime() - 75 * 60 * 1000),
-        actualEndedAt: new Date(now.getTime() - 70 * 60 * 1000),
-      },
-    })
-    await prisma.batchStage.createMany({
-      data: [
-        {
-          batchId: batch.batchId,
-          stage: 'CLASSIFY',
-          status: 'COMPLETED',
-          plannedStartAt: new Date(now.getTime() - 130 * 60 * 1000),
-          plannedEndAt: new Date(now.getTime() - 120 * 60 * 1000),
-          actualStartedAt: new Date(now.getTime() - 130 * 60 * 1000),
-          actualEndedAt: new Date(now.getTime() - 120 * 60 * 1000),
-        },
-        {
-          batchId: batch.batchId,
-          stage: 'PACKING',
-          status: 'COMPLETED',
-          plannedStartAt: new Date(now.getTime() - 70 * 60 * 1000),
-          plannedEndAt: new Date(now.getTime() - 55 * 60 * 1000),
-          actualEndedAt: new Date(now.getTime() - 15 * 60 * 1000),
-        },
-      ],
-    })
+  for (const notification of spec.notifications ?? [])
     await prisma.notification.create({
       data: {
         orderId: order.orderId,
         type: 'READY_FOR_PICKUP',
         channel: 'SMS',
-        status: 'FAILED',
-        content: 'Your laundry order is ready for pickup.',
+        status: notification.status,
+        content: `Đơn #${order.orderId} của anh/chị ${spec.customer[0]} đã sẵn sàng, mời anh/chị đến lấy.`,
+        sentAt: notification.status === 'SENT' ? at(notification.at) : null,
+        createdAt: at(notification.at),
       },
     })
+
+  for (const appointment of spec.appointments ?? [])
+    await prisma.appointmentHistory.create({
+      data: {
+        orderId: order.orderId,
+        oldPickupAt: at(appointment.oldPickupAt),
+        newPickupAt: at(spec.pickupAt),
+        estimatedAt: at(orderEta),
+        reason: appointment.reason,
+        createdAt: at(appointment.at),
+      },
+    })
+
+  for (const alert of spec.alerts ?? [])
     await prisma.alert.create({
       data: {
         orderId: order.orderId,
-        type: 'LATE_RISK',
-        severity: 'WARNING',
-        status: 'OPEN',
-        reason: 'Final notification has not succeeded',
+        type: alert.type,
+        severity: alert.severity,
+        status: alert.status,
+        reason: alert.reason,
+        detectedAt: at(alert.detectedAt),
+        snoozedUntil: alert.snoozedUntil !== undefined ? at(alert.snoozedUntil) : null,
+        resolvedAt: alert.resolvedAt !== undefined ? at(alert.resolvedAt) : null,
       },
     })
-  }
 
-  const now = new Date()
-  const washerIds = [washer.machineId, washer2.machineId, washer3.machineId, washer4.machineId]
-  const dryerIds = [dryer.machineId, dryer2.machineId, dryer3.machineId, dryer4.machineId]
-  await seedOrders('RECEIVED', 3, now, washerIds, dryerIds)
-  await seedOrders('WAITING', 3, now, washerIds, dryerIds)
-  await seedOrders('FOLDING_PACKING', 3, now, washerIds, dryerIds)
-  await seedOrders('READY', 3, now, washerIds, dryerIds)
-  await seedOrders('COMPLETED', 3, now, washerIds, dryerIds)
-  await addManualStages()
+  return { orderId: order.orderId, status }
 }
 
-// Every batch runs sorting (CLASSIFY) before and PACKING after its machine stages.
-// The orders above only create WASH/DRY, so add the manual stages to match each order's status.
-async function addManualStages() {
-  const MINUTE = 60 * 1000
-  const orders = await prisma.laundryOrder.findMany({
-    include: { batches: { include: { stages: true } } },
-  })
-  for (const order of orders) {
-    const sorted = order.status !== 'RECEIVED'
-    const packed = order.status === 'READY' || order.status === 'COMPLETED'
-    for (const batch of order.batches) {
-      if (batch.stages.some((stage) => stage.stage === 'CLASSIFY')) continue
-      const machineStages = [...batch.stages].sort(
-        (a, b) => (a.plannedStartAt?.getTime() ?? 0) - (b.plannedStartAt?.getTime() ?? 0),
-      )
-      const classifyStart = order.createdAt
-      const classifyEnd = new Date(classifyStart.getTime() + 10 * MINUTE)
-      const lastMachineEnd =
-        machineStages.at(-1)?.actualEndedAt ?? machineStages.at(-1)?.plannedEndAt ?? classifyEnd
-      const packingEnd = new Date(lastMachineEnd.getTime() + 15 * MINUTE)
-      await prisma.batchStage.createMany({
-        data: [
-          {
-            batchId: batch.batchId,
-            stage: 'CLASSIFY',
-            status: sorted ? 'COMPLETED' : 'PLANNED',
-            plannedStartAt: classifyStart,
-            plannedEndAt: classifyEnd,
-            actualStartedAt: classifyStart,
-            actualEndedAt: sorted ? (order.classifiedAt ?? classifyEnd) : null,
-          },
-          {
-            batchId: batch.batchId,
-            stage: 'PACKING',
-            status: packed ? 'COMPLETED' : 'PLANNED',
-            plannedStartAt: lastMachineEnd,
-            plannedEndAt: packingEnd,
-            actualEndedAt: packed ? (order.packingCompletedAt ?? packingEnd) : null,
-          },
-        ],
-      })
-      // A batch is COMPLETED only after packing; before that it waits on its next stage.
-      const nextStage = !sorted
-        ? 'CLASSIFY'
-        : machineStages.find((stage) => stage.status !== 'COMPLETED')?.stage ??
-          (packed ? null : 'PACKING')
-      if (nextStage === 'CLASSIFY' || nextStage === 'PACKING')
-        await prisma.orderBatch.update({
-          where: { batchId: batch.batchId },
-          data: { status: 'WAITING', currentStage: nextStage, completedAt: null },
-        })
-    }
+async function main() {
+  await resetDatabase()
+
+  // A machine is BUSY while a stage runs on it or waits there to be unloaded.
+  const occupied = new Set(
+    orders
+      .flatMap((order) => order.batches.flatMap((batch) => batch.stages))
+      .filter((stage) => stage.status === 'IN_PROGRESS' || stage.status === 'MACHINE_FINISHED')
+      .map((stage) => stage.machine),
+  )
+  const machineIds = new Map<string, number>()
+  for (const spec of machineSpecs) {
+    const machine = await prisma.machine.create({
+      data: {
+        name: spec.name,
+        type: spec.type,
+        capacityKg: new Prisma.Decimal(spec.capacityKg),
+        processingMinutes: spec.processingMinutes,
+        status:
+          'maintenance' in spec ? 'MAINTENANCE' : occupied.has(spec.name) ? 'BUSY' : 'AVAILABLE',
+      },
+    })
+    machineIds.set(spec.name, machine.machineId)
   }
+
+  const created = []
+  for (const spec of orders) created.push({ ...(await seedOrder(spec, machineIds)), spec })
+
+  console.log(`Seeded ${machineSpecs.length} machines and ${created.length} orders:`)
+  for (const { orderId, status, spec } of created)
+    console.log(`  #${String(orderId).padEnd(4)} ${status.padEnd(16)} ${spec.scenario}`)
 }
 
 main()

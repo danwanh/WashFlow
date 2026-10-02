@@ -12,6 +12,14 @@ const thresholds = () => ({
   ready: minuteEnv("ALERT_READY_THRESHOLD_MINUTES", 30),
 });
 
+const stageLabels: Record<string, string> = {
+  CLASSIFY: "Phân loại",
+  WASH: "Giặt",
+  DRY: "Sấy",
+  PACKING: "Đóng gói",
+};
+const stageLabel = (stage: string) => stageLabels[stage] ?? "Công đoạn";
+
 const activeStatuses = { status: { not: "RESOLVED" as const } };
 
 async function syncAlert(
@@ -137,8 +145,8 @@ export async function scanAlerts(now = new Date()) {
         type: "LATE_RISK",
         severity: late ? "WARNING" : "INFO",
         reason: late
-          ? "ETA hiện tại vượt thời gian hẹn trả"
-          : "ETA không còn trễ",
+          ? "Dự kiến xong sau giờ hẹn trả khách"
+          : "Đơn đã kịp giờ hẹn trả",
         active: late,
         now,
       });
@@ -155,8 +163,8 @@ export async function scanAlerts(now = new Date()) {
             type: remaining < 0 ? 'STAGE_LATE' : 'STAGE_APPROACHING',
             severity: remaining < 0 ? 'WARNING' : 'INFO',
             reason: remaining < 0
-              ? `${stage.stage} đã trễ ${Math.abs(remaining)} phút`
-              : `${stage.stage} sắp đến hạn trong ${remaining} phút`,
+              ? `${stageLabel(stage.stage)} đã trễ ${Math.abs(remaining)} phút`
+              : `${stageLabel(stage.stage)} cần xong trong ${remaining} phút nữa`,
             active: remaining < 0 || remaining <= 5,
             now,
           });
